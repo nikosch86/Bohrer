@@ -1,0 +1,59 @@
+
+services:
+  ssh-tunnel:
+    build: .
+    environment:
+      - DOMAIN=tunnel-net
+      - ACME_EMAIL=test@example.com
+      - SSH_PORT=2222
+      - HTTP_PORT=8080
+      - HTTPS_PORT=8443
+      - ACME_STAGING=true
+    volumes:
+      - ./data:/data
+    networks:
+      - tunnel-net
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2222"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mock-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    environment:
+      - PORT=3000
+    networks:
+      - tunnel-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  e2e-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      ssh-tunnel:
+        condition: service_healthy
+      mock-server:
+        condition: service_healthy
+    networks:
+      - tunnel-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - SSH_HOST=ssh-tunnel
+      - SSH_PORT=2222
+      - HTTP_HOST=ssh-tunnel
+      - HTTP_PORT=8080
+      - MOCK_HOST=mock-server
+      - MOCK_PORT=3000
+
+networks:
+  tunnel-net:
+    driver: bridge

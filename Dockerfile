@@ -1,0 +1,18 @@
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o ssh-tunnel ./cmd/server
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates openssh-client curl netcat-openbsd
+WORKDIR /root/
+
+COPY --from=builder /app/ssh-tunnel .
+
+EXPOSE 2222 8080 8443
+
+CMD ["./ssh-tunnel"]
