@@ -3,18 +3,21 @@ services:
   ssh-tunnel:
     build: .
     environment:
-      - DOMAIN=tunnel-net
+      - DOMAIN=ssh-tunnel
       - ACME_EMAIL=test@example.com
-      - SSH_PORT=2222
-      - HTTP_PORT=8080
-      - HTTPS_PORT=8443
+      - SSH_PORT=22
+      - HTTP_PORT=80
+      - HTTPS_PORT=443
+      - HTTP_EXTERNAL_PORT=80
+      - HTTPS_EXTERNAL_PORT=443
+      - SSH_EXTERNAL_PORT=22
       - ACME_STAGING=true
     volumes:
       - ./data:/data
     networks:
       - tunnel-net
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2222"]
+      test: ["CMD", "nc", "-z", "localhost", "22"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -48,11 +51,33 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - SSH_HOST=ssh-tunnel
-      - SSH_PORT=2222
+      - SSH_PORT=22
       - HTTP_HOST=ssh-tunnel
-      - HTTP_PORT=8080
+      - HTTP_PORT=80
       - MOCK_HOST=mock-server
       - MOCK_PORT=3000
+
+  integration-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      ssh-tunnel:
+        condition: service_healthy
+      mock-server:
+        condition: service_healthy
+    networks:
+      - tunnel-net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - SSH_HOST=ssh-tunnel
+      - SSH_PORT=22
+      - HTTP_HOST=ssh-tunnel
+      - HTTP_PORT=80
+      - MOCK_HOST=mock-server
+      - MOCK_PORT=3000
+    command: ["./integration-test.sh"]
 
 networks:
   tunnel-net:

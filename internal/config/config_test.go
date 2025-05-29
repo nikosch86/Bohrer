@@ -12,8 +12,25 @@ func TestLoad(t *testing.T) {
 		t.Errorf("Expected default domain 'localhost', got %s", cfg.Domain)
 	}
 	
-	if cfg.SSHPort != 2222 {
-		t.Errorf("Expected default SSH port 2222, got %d", cfg.SSHPort)
+	if cfg.SSHPort != 22 {
+		t.Errorf("Expected default SSH port 22, got %d", cfg.SSHPort)
+	}
+	
+	if cfg.HTTPPort != 80 {
+		t.Errorf("Expected default HTTP port 80, got %d", cfg.HTTPPort)
+	}
+	
+	if cfg.HTTPSPort != 443 {
+		t.Errorf("Expected default HTTPS port 443, got %d", cfg.HTTPSPort)
+	}
+	
+	// External ports should default to internal ports
+	if cfg.HTTPExternalPort != cfg.HTTPPort {
+		t.Errorf("Expected HTTPExternalPort to default to HTTPPort %d, got %d", cfg.HTTPPort, cfg.HTTPExternalPort)
+	}
+	
+	if cfg.HTTPSExternalPort != cfg.HTTPSPort {
+		t.Errorf("Expected HTTPSExternalPort to default to HTTPSPort %d, got %d", cfg.HTTPSPort, cfg.HTTPSExternalPort)
 	}
 }
 
