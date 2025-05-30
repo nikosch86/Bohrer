@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoffmann/bohrer-go/internal/config"
+	"bohrer-go/internal/config"
 )
 
 func TestNewProxy(t *testing.T) {

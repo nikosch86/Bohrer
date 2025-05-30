@@ -8,12 +8,18 @@
 *.so
 *.dylib
 
+# Built server binary
+server
+
 # Test binary, built with `go test -c`
 *.test
 
 # Output of the go coverage tool
 *.out
 coverage.html
+ssh_coverage.html
+
+# Test files (none currently ignored - test keys are safe dummy data)
 
 # Go workspace file
 go.work

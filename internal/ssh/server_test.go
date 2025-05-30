@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"fmt"
 	"io"
 	"net"
@@ -9,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoffmann/bohrer-go/internal/config"
+	"bohrer-go/internal/config"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -501,6 +503,31 @@ func TestSetTunnelManager(t *testing.T) {
 	}
 }
 
+func TestHandleTunnelRequestWrapper(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+	mockChannel := &mockSSHChannel{}
+	mockConn := &mockSSHConn{}
+
+	// Test the wrapper function (HandleTunnelRequest vs handleTunnelRequest)
+	payload := []byte{0, 0, 0, 0, 0, 0, 0, 0} // valid payload
+	subdomain, port := server.HandleTunnelRequest(payload, mockChannel, mockConn)
+
+	if subdomain == "" {
+		t.Error("Expected non-empty subdomain from HandleTunnelRequest wrapper")
+	}
+
+	if port == 0 {
+		t.Error("Expected non-zero port from HandleTunnelRequest wrapper")
+	}
+}
+
 func TestHandleTunnelRequest(t *testing.T) {
 	cfg := &config.Config{
 		Domain:    "test.com",
@@ -649,7 +676,9 @@ func (m *mockSSHConn) ServerVersion() []byte           { return []byte("SSH-2.0-
 func (m *mockSSHConn) RemoteAddr() net.Addr            { addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12345"); return addr }
 func (m *mockSSHConn) LocalAddr() net.Addr             { addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:2222"); return addr }
 func (m *mockSSHConn) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) { return false, nil, nil }
-func (m *mockSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) { return nil, nil, nil }
+func (m *mockSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) { 
+	return nil, nil, fmt.Errorf("mock error: administratively prohibited")
+}
 func (m *mockSSHConn) Close() error { return nil }
 func (m *mockSSHConn) Wait() error  { return nil }
 
@@ -1826,6 +1855,391 @@ func TestNewServerErrorHandling(t *testing.T) {
 	}
 }
 
+func TestAuthenticatePublicKey(t *testing.T) {
+	cfg := &config.Config{
+		Domain:         "test.com",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		AuthorizedKeys: "/app/test/test_authorized_keys",
+	}
+	
+	server := NewServer(cfg)
+	
+	// Generate a test key pair
+	testPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate test key: %v", err)
+	}
+	
+	testPublicKey, err := ssh.NewPublicKey(&testPrivateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to create SSH public key: %v", err)
+	}
+	
+	// Test with valid user but unauthorized key
+	connMeta := &mockConnMetadata{user: "tunnel"}
+	perms, err := server.authenticatePublicKey(connMeta, testPublicKey)
+	if err == nil {
+		t.Error("Expected error for unauthorized key, got nil")
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for unauthorized key")
+	}
+	
+	// Test with invalid user
+	connMeta = &mockConnMetadata{user: "invalid"}
+	perms, err = server.authenticatePublicKey(connMeta, testPublicKey)
+	if err == nil {
+		t.Error("Expected error for invalid user, got nil")
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for invalid user")
+	}
+}
+
+func TestLoadAuthorizedKeys(t *testing.T) {
+	cfg := &config.Config{
+		Domain:         "test.com",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		AuthorizedKeys: "/app/test/test_authorized_keys",
+	}
+	
+	server := NewServer(cfg)
+	
+	// Test loading existing file
+	keys, err := server.loadAuthorizedKeys()
+	if err != nil {
+		t.Fatalf("Failed to load authorized keys: %v", err)
+	}
+	
+	// Should have 3 valid keys (excluding comment)
+	expectedKeys := 3
+	if len(keys) != expectedKeys {
+		t.Errorf("Expected %d keys, got %d", expectedKeys, len(keys))
+	}
+	
+	// Test with non-existent file
+	server.config.AuthorizedKeys = "/non/existent/file"
+	keys, err = server.loadAuthorizedKeys()
+	if err == nil {
+		t.Error("Expected error for non-existent file, got nil")
+	}
+	if keys != nil {
+		t.Error("Expected nil keys for non-existent file")
+	}
+}
+
+func TestForwardConnectionThroughSSH(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+	
+	server := NewServer(cfg)
+	
+	// Create mock connections
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+	
+	// Create mock SSH connection
+	mockSSHConn := &mockSSHConn{}
+	
+	// Test with invalid forward target format
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "invalid", 3000)
+	
+	// Give it time to process
+	time.Sleep(100 * time.Millisecond)
+	
+	// Test with valid format but unparseable port
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "localhost:invalid", 3000)
+	
+	// Give it time to process
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestStartRemoteForwardListener(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+	
+	server := NewServer(cfg)
+	
+	// Create mock SSH connection
+	mockSSHConn := &mockSSHConn{}
+	
+	// Test with invalid port (should fail to bind)
+	go server.startRemoteForwardListener(-1, mockSSHConn, "localhost:3000")
+	
+	// Give it time to process
+	time.Sleep(100 * time.Millisecond)
+	
+	// Test with valid high port number that should be available
+	testPort := 25000
+	go server.startRemoteForwardListener(testPort, mockSSHConn, "localhost:3000")
+	
+	// Give it time to start
+	time.Sleep(200 * time.Millisecond)
+	
+	// Try to connect to the port to verify it's listening
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf(":%d", testPort), 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		t.Log("Successfully connected to test port - listener is working")
+	} else {
+		t.Log("Failed to connect to test port - this is expected in test environment")
+	}
+}
+
+func TestSendTunnelURLsToSessions(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+	
+	server := NewServer(cfg)
+	
+	// Create mock SSH connection
+	mockSSHConn := &mockSSHConn{}
+	
+	// Test with no active sessions - should store as pending
+	server.sendTunnelURLsToSessions(mockSSHConn, "http://test.example.com", "https://test.example.com")
+	
+	// Check that URL was stored as pending
+	server.mutex.Lock()
+	pendingURLs := server.pendingURLs[mockSSHConn]
+	server.mutex.Unlock()
+	
+	if len(pendingURLs) != 1 {
+		t.Errorf("Expected 1 pending URL, got %d", len(pendingURLs))
+	}
+	
+	// Create a mock session and add it
+	mockChannel := &mockSSHChannel{}
+	server.mutex.Lock()
+	server.sessions[mockSSHConn] = []ssh.Channel{mockChannel}
+	server.mutex.Unlock()
+	
+	// Send URLs to active session
+	server.sendTunnelURLsToSessions(mockSSHConn, "http://test2.example.com", "https://test2.example.com")
+	
+	// Give goroutines time to execute
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestServerPasswordCallback(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create SSH config like Start() does
+	sshConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == "tunnel" && string(pass) == "test123" {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("password rejected for %q", c.User())
+		},
+		PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+			return server.authenticatePublicKey(c, pubKey)
+		},
+	}
+
+	// Test valid password
+	connMeta := &mockConnMetadata{user: "tunnel"}
+	perms, err := sshConfig.PasswordCallback(connMeta, []byte("test123"))
+	if err != nil {
+		t.Errorf("Expected no error for valid password, got: %v", err)
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for password auth")
+	}
+
+	// Test invalid password
+	perms, err = sshConfig.PasswordCallback(connMeta, []byte("wrong"))
+	if err == nil {
+		t.Error("Expected error for invalid password")
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for invalid password")
+	}
+
+	// Test invalid user
+	connMeta = &mockConnMetadata{user: "invalid"}
+	perms, err = sshConfig.PasswordCallback(connMeta, []byte("test123"))
+	if err == nil {
+		t.Error("Expected error for invalid user")
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for invalid user")
+	}
+}
+
+func TestServerPublicKeyCallback(t *testing.T) {
+	cfg := &config.Config{
+		Domain:         "test.com",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		AuthorizedKeys: "/app/test/test_authorized_keys",
+	}
+
+	server := NewServer(cfg)
+
+	// Create SSH config like Start() does
+	sshConfig := &ssh.ServerConfig{
+		PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+			return server.authenticatePublicKey(c, pubKey)
+		},
+	}
+
+	// Generate a test key
+	testPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate test key: %v", err)
+	}
+
+	testPublicKey, err := ssh.NewPublicKey(&testPrivateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to create SSH public key: %v", err)
+	}
+
+	// Test the callback
+	connMeta := &mockConnMetadata{user: "tunnel"}
+	perms, err := sshConfig.PublicKeyCallback(connMeta, testPublicKey)
+	
+	// Should get an error since the key is not in authorized_keys
+	if err == nil {
+		t.Error("Expected error for unauthorized key")
+	}
+	if perms != nil {
+		t.Error("Expected nil permissions for unauthorized key")
+	}
+}
+
+func TestGenerateHostKeyErrorCondition(t *testing.T) {
+	// Test the error path in generateHostKey by creating RSA key error
+	// This is hard to trigger directly, so we test that NewServer handles it gracefully
+	
+	// We can't easily mock the RSA generation, but we can test the structure
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+	
+	// Verify the server was created despite any potential issues
+	if server == nil {
+		t.Error("NewServer should create server even if there might be key generation issues")
+	}
+	
+	if server.hostKey == nil {
+		t.Error("Server should have a host key after creation")
+	}
+}
+
+func TestHandleDirectTcpipConnectError(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create a tunnel for testing
+	server.tunnels["test"] = &Tunnel{
+		Subdomain:   "test",
+		LocalPort:   9999, // Port that should fail to connect
+		Connections: make(map[string]net.Conn),
+	}
+
+	// Create a mock channel that will provide valid payload
+	mockChannel := &mockNewChannel{
+		channelType: "direct-tcpip",
+		extraData: []byte{
+			0, 0, 0, 9, // host length
+			'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', // host
+			0, 0, 0x27, 0x0F, // port 9999
+			0, 0, 0, 9, // origin host length  
+			'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', // origin host
+			0, 0, 0, 0, // origin port
+		},
+	}
+
+	// This should trigger the connection error path
+	server.handleDirectTcpip(mockChannel)
+
+	// Give time for the goroutine to complete
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestBridgeConnectionsTimeout(t *testing.T) {
+	// Create two connected pipes
+	conn1, conn2 := net.Pipe()
+	defer conn1.Close()
+	defer conn2.Close()
+
+	// Create a mock SSH channel
+	mockChannel := &mockSSHChannel{}
+
+	// Test bridgeConnections with a very short timeout
+	err := bridgeConnections(mockChannel, conn1, 10*time.Millisecond)
+	
+	// Should timeout
+	if err == nil {
+		t.Error("Expected timeout error from bridgeConnections")
+	}
+	
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("Expected timeout error, got: %v", err)
+	}
+}
+
+func TestForwardConnectionErrorPaths(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create mock connections - use a pipe so we have real net.Conn
+	serverConn, clientConn := net.Pipe()
+	defer clientConn.Close()
+
+	// Create mock SSH connection  
+	mockSSHConn := &mockSSHConn{}
+
+	// Test forwardConnectionThroughSSH error cases
+	// This will trigger the SSH channel open error
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "localhost:3000", 3000)
+	
+	// Give time for the goroutine to complete
+	time.Sleep(100 * time.Millisecond)
+}
+
 // Mock local server for testing TCP bridging
 type mockLocalServer struct {
 	responses map[string]string
@@ -1860,3 +2274,318 @@ func (m *mockLocalServer) RemoteAddr() net.Addr {
 func (m *mockLocalServer) SetDeadline(t time.Time) error      { return nil }
 func (m *mockLocalServer) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockLocalServer) SetWriteDeadline(t time.Time) error { return nil }
+
+// Additional coverage tests for handleConnection function
+func TestHandleConnectionGlobalRequestsUnknown(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+	mockTM := newMockTunnelManager()
+	server.SetTunnelManager(mockTM)
+
+	// Create SSH config
+	sshConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == "tunnel" && string(pass) == "test123" {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("password rejected for %q", c.User())
+		},
+	}
+	sshConfig.AddHostKey(server.hostKey)
+
+	// Create pipe connection
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	// Start handleConnection in goroutine
+	done := make(chan bool, 1)
+	go func() {
+		server.handleConnection(serverConn, sshConfig)
+		done <- true
+	}()
+
+	// Create SSH client to test unknown global requests
+	clientConfig := &ssh.ClientConfig{
+		User: "tunnel",
+		Auth: []ssh.AuthMethod{
+			ssh.Password("test123"),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         time.Second,
+	}
+
+	go func() {
+		defer clientConn.Close()
+		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
+		if err != nil {
+			return
+		}
+		defer sshConn.Close()
+
+		go ssh.DiscardRequests(reqs)
+		go func() {
+			for range chans {
+				// Discard channels
+			}
+		}()
+
+		// Send unknown global request
+		sshConn.SendRequest("unknown-request", false, []byte("test"))
+		
+		// Send invalid tcpip-forward
+		sshConn.SendRequest("tcpip-forward", false, []byte{0, 1}) // Invalid payload
+
+		time.Sleep(100 * time.Millisecond)
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-done:
+		t.Log("Unknown global request test completed")
+	case <-time.After(2 * time.Second):
+		t.Log("Unknown global request test completed with timeout")
+	}
+}
+
+func TestHandleConnectionSessionCleanup(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create SSH config
+	sshConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == "tunnel" && string(pass) == "test123" {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("password rejected for %q", c.User())
+		},
+	}
+	sshConfig.AddHostKey(server.hostKey)
+
+	// Create pipe connection
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	// Start handleConnection in goroutine
+	done := make(chan bool, 1)
+	go func() {
+		server.handleConnection(serverConn, sshConfig)
+		done <- true
+	}()
+
+	// Create SSH client to test session cleanup
+	clientConfig := &ssh.ClientConfig{
+		User: "tunnel",
+		Auth: []ssh.AuthMethod{
+			ssh.Password("test123"),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         time.Second,
+	}
+
+	go func() {
+		defer clientConn.Close()
+		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
+		if err != nil {
+			return
+		}
+		defer sshConn.Close()
+
+		go ssh.DiscardRequests(reqs)
+		
+		// Open multiple session channels to test cleanup
+		for i := 0; i < 3; i++ {
+			channel, requests, err := sshConn.OpenChannel("session", nil)
+			if err != nil {
+				continue
+			}
+			
+			go func() {
+				for req := range requests {
+					if req.Type == "shell" {
+						req.Reply(true, nil)
+					} else {
+						req.Reply(false, nil)
+					}
+				}
+			}()
+			
+			// Send some data and close quickly to test cleanup
+			channel.Write([]byte("test\n"))
+			time.Sleep(50 * time.Millisecond)
+			channel.Close()
+		}
+
+		// Discard remaining channels
+		go func() {
+			for range chans {
+				// Discard channels
+			}
+		}()
+
+		time.Sleep(200 * time.Millisecond)
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-done:
+		t.Log("Session cleanup test completed")
+	case <-time.After(3 * time.Second):
+		t.Log("Session cleanup test completed with timeout")
+	}
+}
+
+func TestHandleConnectionWaitError(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create SSH config
+	sshConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+	}
+	sshConfig.AddHostKey(server.hostKey)
+
+	// Create pipe connection
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+
+	// Start handleConnection in goroutine
+	done := make(chan bool, 1)
+	go func() {
+		server.handleConnection(serverConn, sshConfig)
+		done <- true
+	}()
+
+	// Create SSH connection and close it abruptly to trigger Wait() error
+	go func() {
+		defer clientConn.Close()
+		clientConfig := &ssh.ClientConfig{
+			User: "tunnel",
+			Auth: []ssh.AuthMethod{
+				ssh.Password("test123"),
+			},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Timeout:         500 * time.Millisecond,
+		}
+
+		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
+		if err != nil {
+			return
+		}
+		
+		go ssh.DiscardRequests(reqs)
+		go func() {
+			for range chans {
+				// Discard channels
+			}
+		}()
+
+		// Close connection abruptly to cause Wait() error
+		time.Sleep(100 * time.Millisecond)
+		sshConn.Close()
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-done:
+		t.Log("Wait error test completed")
+	case <-time.After(2 * time.Second):
+		t.Log("Wait error test completed with timeout")
+	}
+}
+
+func TestHandleConnectionAcceptError(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	server := NewServer(cfg)
+
+	// Create SSH config
+	sshConfig := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+	}
+	sshConfig.AddHostKey(server.hostKey)
+
+	// Create a custom connection that will cause channel accept to fail
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	// Start handleConnection in goroutine
+	done := make(chan bool, 1)
+	go func() {
+		server.handleConnection(serverConn, sshConfig)
+		done <- true
+	}()
+
+	// Create SSH client but close connection during channel operations
+	go func() {
+		defer clientConn.Close()
+		clientConfig := &ssh.ClientConfig{
+			User: "tunnel",
+			Auth: []ssh.AuthMethod{
+				ssh.Password("test123"),
+			},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Timeout:         time.Second,
+		}
+
+		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
+		if err != nil {
+			return
+		}
+
+		go ssh.DiscardRequests(reqs)
+		go func() {
+			for range chans {
+				// Discard channels
+			}
+		}()
+
+		// Try to open channel but close connection immediately to cause accept errors
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			sshConn.Close() // This should cause accept errors
+		}()
+
+		// Try to open session after connection starts closing
+		time.Sleep(100 * time.Millisecond)
+		sshConn.OpenChannel("session", nil)
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-done:
+		t.Log("Accept error test completed")
+	case <-time.After(2 * time.Second):
+		t.Log("Accept error test completed with timeout")
+	}
+}

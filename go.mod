@@ -1,4 +1,4 @@
-module github.com/hoffmann/bohrer-go
+module bohrer-go
 
 go 1.21
 

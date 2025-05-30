@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoffmann/bohrer-go/internal/config"
-	"github.com/hoffmann/bohrer-go/internal/proxy"
-	"github.com/hoffmann/bohrer-go/internal/ssh"
+	"bohrer-go/internal/config"
+	"bohrer-go/internal/proxy"
+	"bohrer-go/internal/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
 )
 

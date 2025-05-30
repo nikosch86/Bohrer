@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hoffmann/bohrer-go/internal/config"
+	"bohrer-go/internal/config"
 )
 
 type Proxy struct {

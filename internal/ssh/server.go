@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hoffmann/bohrer-go/internal/config"
+	"bohrer-go/internal/config"
 	"golang.org/x/crypto/ssh"
 )
 
