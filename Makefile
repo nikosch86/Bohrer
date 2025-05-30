@@ -1,15 +1,15 @@
 .PHONY: test e2e build clean deps dev-up dev-down
 
 deps:
-	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.21-alpine go mod tidy
-	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.21-alpine go mod download
+	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.23-alpine go mod tidy
+	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.23-alpine go mod download
 
 build:
 	docker compose build
 
 test:
-	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -v go-build-cache:/root/.cache/go-build -w /app -e CGO_ENABLED=1 golang:1.21 go test -v -race -coverprofile=coverage.out ./...
-	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.21-alpine go tool cover -html=coverage.out -o coverage.html
+	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -v go-build-cache:/root/.cache/go-build -w /app -e CGO_ENABLED=1 golang:1.23 go test -v -race -coverprofile=coverage.out ./...
+	docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -w /app golang:1.23-alpine go tool cover -html=coverage.out -o coverage.html
 
 e2e:
 	@echo "🚀 Running dockerized end-to-end tests..."
