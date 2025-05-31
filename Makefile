@@ -25,7 +25,7 @@ coverage: test
 
 e2e:
 	@echo "🚀 Running dockerized end-to-end tests..."
-	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from e2e-test
+	timeout 120s docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from e2e-test || (echo "❌ E2E tests timed out or failed"; docker compose -f docker-compose.test.yml down -v; exit 1)
 	docker compose -f docker-compose.test.yml down -v
 
 dev-up:
