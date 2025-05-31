@@ -560,8 +560,6 @@ func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
 func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Conn, listeningPort int) {
 	defer localConn.Close()
 
-	log.Printf("forwardConnectionThroughSSH: listeningPort=%d", listeningPort)
-
 	// Get originator address and port from the incoming connection
 	originAddr, originPortStr, _ := net.SplitHostPort(localConn.RemoteAddr().String())
 	originPort, _ := strconv.Atoi(originPortStr)
