@@ -46,16 +46,15 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 
 3. **Set up SSH key authentication (recommended for production):**
    ```bash
-   # Create data directory
-   mkdir -p ./data
+   # Option 1: Add your existing public key to the container
+   docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ~/.ssh/id_rsa.pub)' > /data/authorized_keys"
    
-   # Copy your public key to authorized_keys
-   cp ~/.ssh/id_rsa.pub ./data/authorized_keys
-   
-   # Or create a new key specifically for the tunnel
-   ssh-keygen -t rsa -b 4096 -f ./data/tunnel_key
-   cp ./data/tunnel_key.pub ./data/authorized_keys
+   # Option 2: Create a new key specifically for the tunnel
+   ssh-keygen -t rsa -b 4096 -f ./tunnel_key
+   docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ./tunnel_key.pub)' > /data/authorized_keys"
    ```
+   
+   **Note**: The server uses Docker named volumes for data persistence. SSH keys and certificates are stored in the `ssh_tunnel_data` volume.
 
 4. **Start the server:**
    ```bash
@@ -129,19 +128,18 @@ ssh-keygen -t rsa -b 4096 -C "your-email@example.com"
 
 **2. Create Authorized Keys File:**
 ```bash
-# On your server, create the authorized keys file
-mkdir -p /path/to/your/data
-cp ~/.ssh/id_rsa.pub /path/to/your/data/authorized_keys
+# Add your public key to the container volume
+docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ~/.ssh/id_rsa.pub)' > /data/authorized_keys"
 
 # Or add multiple keys:
-cat user1_key.pub user2_key.pub > /path/to/your/data/authorized_keys
+docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && cat > /data/authorized_keys" << EOF
+$(cat user1_key.pub)
+$(cat user2_key.pub)
+EOF
 ```
 
 **3. Configure Server Environment:**
-```bash
-# Set the path to your authorized keys file
-export SSH_AUTHORIZED_KEYS=/path/to/your/data/authorized_keys
-```
+The server automatically uses `/data/authorized_keys` inside the container. No additional configuration needed when using the default Docker Compose setup.
 
 **4. Connect with SSH Key:**
 ```bash
@@ -206,17 +204,132 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 
 ### Environment Variables
 
+#### Core Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOMAIN` | `localhost` | Base domain for subdomains |
-| `ACME_EMAIL` | `test@example.com` | Email for Let's Encrypt certificates |
-| `SSH_PORT` | `22` | SSH server internal port (standard SSH port) |
-| `HTTP_PORT` | `80` | HTTP proxy internal port (standard HTTP port) |
-| `HTTPS_PORT` | `443` | HTTPS proxy internal port (standard HTTPS port) |
-| `HTTP_EXTERNAL_PORT` | `HTTP_PORT` | HTTP proxy external port (for Docker port mapping) |
-| `HTTPS_EXTERNAL_PORT` | `HTTPS_PORT` | HTTPS proxy external port (for Docker port mapping) |
-| `ACME_STAGING` | `true` | Use Let's Encrypt staging environment |
+| `DOMAIN` | `localhost` | Base domain for tunnel subdomains (e.g., subdomain.DOMAIN) |
+
+#### SSL/ACME Certificate Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ACME_EMAIL` | `test@example.com` | Email for Let's Encrypt registration (empty = use self-signed) |
+| `ACME_STAGING` | `true` | Use Let's Encrypt staging (true) or production (false) - **SAFETY**: Always defaults to staging |
+| `ACME_DIRECTORY_URL` | `""` | Custom ACME server URL (empty = Let's Encrypt) |
+| `ACME_FORCE_LOCAL` | `false` | Force ACME even for local domains (for custom PKI) |
+| `ACME_CERT_PATH` | `/data/certs/fullchain.pem` | Certificate file path (inside container) |
+| `ACME_KEY_PATH` | `/data/certs/key.pem` | Private key file path (inside container) |
+| `ACME_CHALLENGE_DIR` | `/data/acme-challenge` | HTTP-01 challenge directory |
+| `ACME_RENEWAL_DAYS` | `30` | Certificate renewal threshold (days before expiry) |
+
+#### Port Configuration  
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SSH_PORT` | `22` | SSH server internal port (inside container) |
+| `HTTP_PORT` | `80` | HTTP proxy internal port (inside container) |
+| `HTTPS_PORT` | `443` | HTTPS proxy internal port (inside container) |
+| `SSH_EXTERNAL_PORT` | `SSH_PORT` | SSH server external port (Docker host) |
+| `HTTP_EXTERNAL_PORT` | `HTTP_PORT` | HTTP proxy external port (Docker host) |
+| `HTTPS_EXTERNAL_PORT` | `HTTPS_PORT` | HTTPS proxy external port (Docker host) |
+
+#### SSH Authentication
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SSH_AUTHORIZED_KEYS` | `/data/authorized_keys` | Path to SSH authorized keys file |
+
+### Certificate Configuration Scenarios
+
+#### Development (Self-Signed Certificates)
+```bash
+# .env
+DOMAIN=localhost
+ACME_EMAIL=                    # Empty = disable ACME
+ACME_STAGING=true
+HTTP_EXTERNAL_PORT=8080
+HTTPS_EXTERNAL_PORT=8443
+```
+**Result**: Generates wildcard self-signed certificate for `*.localhost`
+
+#### Production (Let's Encrypt)
+```bash
+# .env  
+DOMAIN=tunnel.yourdomain.com
+ACME_EMAIL=admin@yourdomain.com
+ACME_STAGING=false            # EXPLICIT production setting required
+HTTP_EXTERNAL_PORT=80
+HTTPS_EXTERNAL_PORT=443
+```
+**Result**: Uses Let's Encrypt production server for real certificates
+
+**⚠️ PRODUCTION SAFETY & RATE LIMITING**: 
+- **Always test with staging first** (`ACME_STAGING=true`)
+- **Built-in rate limiting** protects against Let's Encrypt production limits:
+  - 5 authorization failures per hostname per hour
+  - 300 new orders per account every 3 hours  
+  - 50 certificates per domain every 7 days
+- **Automatic enforcement**: Rate limits are checked before ACME requests
+- Only set `ACME_STAGING=false` for real production deployments
+- Requires valid public domain with proper DNS setup
+
+#### Staging/Testing (Let's Encrypt Staging)
+```bash
+# .env
+DOMAIN=tunnel-test.yourdomain.com
+ACME_EMAIL=admin@yourdomain.com
+ACME_STAGING=true             # Use staging Let's Encrypt
+```
+**Result**: Uses Let's Encrypt staging server (higher rate limits, fake certificates)
+
+#### Custom PKI/Internal CA
+```bash
+# .env
+DOMAIN=tunnel.company.local
+ACME_EMAIL=admin@company.local
+ACME_DIRECTORY_URL=https://ca.company.local/acme/acme/directory
+ACME_FORCE_LOCAL=true         # Force ACME for local domains
+ACME_STAGING=false
+```
+**Result**: Uses your internal ACME server (e.g., Step CA, Smallstep) even for local domains
+
+#### Mixed Environment (Custom ACME + Local Fallback)
+```bash
+# .env
+DOMAIN=dev.company.local
+ACME_EMAIL=admin@company.local
+ACME_DIRECTORY_URL=https://ca.company.local/acme/acme/directory
+ACME_FORCE_LOCAL=false        # Don't force - fallback to self-signed if ACME fails
+```
+**Result**: Tries custom ACME server first, falls back to self-signed if it fails
+
+### Certificate Decision Logic
+
+The server chooses certificate type based on this priority:
+
+1. **No ACME Email** → Always use self-signed certificates
+2. **Local Domain + No Custom ACME URL** → Use self-signed certificates  
+3. **Local Domain + Custom ACME URL** → Use custom ACME server
+4. **Public Domain** → Use Let's Encrypt (staging or production)
+5. **ACME_FORCE_LOCAL=true** → Force ACME even for local domains
+
+**Local domains** are detected as: `localhost`, `*.local`, `*.lan`, `*.home`, `*.internal`, `*.dev`, `*.test`, or private IP addresses.
+
+### ACME Rate Limiting
+
+The server includes **built-in rate limiting** to protect against Let's Encrypt production rate limits:
+
+#### Rate Limits (Production Only)
+- **Authorization Failures**: 5 per hostname per hour
+- **New Orders**: 300 per account every 3 hours
+- **Domain Certificates**: 50 per domain every 7 days
+
+#### Features
+- **Automatic Protection**: Checks limits before making ACME requests
+- **Staging Bypass**: No limits applied for staging environment
+- **Custom ACME Bypass**: No limits for custom ACME directories
+- **Error Prevention**: Clear error messages when limits would be exceeded
+- **Memory-based**: Tracks usage in application memory (resets on restart)
+
+#### Rate Limit Status
+The rate limiting status can be monitored programmatically through the ACME client's `GetRateLimitStatus()` method, which returns current usage for all tracked limits.
 
 ### Docker Compose Configuration
 
@@ -242,8 +355,11 @@ services:
       - HTTPS_EXTERNAL_PORT=${HTTPS_EXTERNAL_PORT:-8443}
       - SSH_AUTHORIZED_KEYS=/data/authorized_keys
     volumes:
-      - ./data:/data   # Certificate and SSH keys storage
+      - ssh_tunnel_data:/data   # Named volume for certificate and SSH keys storage
     restart: unless-stopped
+
+volumes:
+  ssh_tunnel_data:
 ```
 
 ### Environment Configuration
@@ -352,11 +468,11 @@ docker compose logs ssh-tunnel
 - **For password auth**: Verify username is `tunnel` and password is `test123`
 - **For key auth**: Check these common issues:
   ```bash
-  # Verify your public key is in authorized_keys
-  cat ./data/authorized_keys
+  # Verify your public key is in authorized_keys inside the container
+  docker compose exec ssh-tunnel cat /data/authorized_keys
   
-  # Check file permissions (should be readable by container)
-  ls -la ./data/authorized_keys
+  # Check file permissions inside container
+  docker compose exec ssh-tunnel ls -la /data/authorized_keys
   
   # Test SSH key locally
   ssh-keygen -l -f ~/.ssh/id_rsa.pub
@@ -364,7 +480,7 @@ docker compose logs ssh-tunnel
   # Check server logs for specific auth errors
   docker compose logs ssh-tunnel | grep -i auth
   
-  # Verify the authorized_keys file is mounted correctly
+  # Verify the authorized_keys file exists in the volume
   docker compose exec ssh-tunnel ls -la /data/
   ```
 
@@ -430,19 +546,25 @@ docker compose logs ssh-tunnel
 ## Limitations
 
 ### Current Limitations
-- HTTP only (HTTPS support in development)
-- Password authentication only
 - No tunnel management interface
-- No connection rate limiting
-- Development-focused configuration
+- No connection rate limiting  
+- Basic monitoring only
+
+### Completed Features
+- ✅ SSH tunnel creation and HTTP proxy routing
+- ✅ HTTPS with automatic Let's Encrypt certificates
+- ✅ Self-signed certificate generation for development
+- ✅ SSH key authentication
+- ✅ Custom ACME server support (for internal PKI)
+- ✅ **Built-in ACME rate limiting** (protects against Let's Encrypt limits)
+- ✅ Comprehensive configuration options
 
 ### Planned Features
-- ✅ SSH tunnel creation and HTTP proxy routing
-- 🔄 HTTPS with automatic Let's Encrypt certificates
-- 📋 SSH key authentication
 - 📋 Web-based tunnel management interface
 - 📋 Rate limiting and security hardening
 - 📋 Monitoring and usage analytics
+- 📋 Multiple authentication backends
+- 📋 Tunnel persistence and reconnection
 
 ## Contributing
 

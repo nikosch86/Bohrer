@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -27,14 +28,21 @@ type TunnelManager interface {
 	RemoveTunnel(subdomain string)
 }
 
+// CertificateManager interface for managing subdomain certificates
+type CertificateManager interface {
+	EnsureSubdomainCertificate(ctx context.Context, subdomain string) error
+	CleanupSubdomainCertificate(subdomain string) error
+}
+
 type Server struct {
-	config        *config.Config
-	hostKey       ssh.Signer
-	tunnels       map[string]*Tunnel
-	sessions      map[ssh.Conn][]ssh.Channel // Track active sessions per connection
-	pendingURLs   map[ssh.Conn][]string      // Track pending tunnel URLs per connection
-	mutex         sync.RWMutex
-	tunnelManager TunnelManager
+	config             *config.Config
+	hostKey            ssh.Signer
+	tunnels            map[string]*Tunnel
+	sessions           map[ssh.Conn][]ssh.Channel // Track active sessions per connection
+	pendingURLs        map[ssh.Conn][]string      // Track pending tunnel URLs per connection
+	mutex              sync.RWMutex
+	tunnelManager      TunnelManager
+	certificateManager CertificateManager
 }
 
 type Tunnel struct {
@@ -55,17 +63,35 @@ func NewServer(cfg *config.Config) *Server {
 	}
 
 	return &Server{
-		config:        cfg,
-		hostKey:       hostKey,
-		tunnels:       make(map[string]*Tunnel),
-		sessions:      make(map[ssh.Conn][]ssh.Channel),
-		pendingURLs:   make(map[ssh.Conn][]string),
-		tunnelManager: nil, // Set later via SetTunnelManager
+		config:             cfg,
+		hostKey:            hostKey,
+		tunnels:            make(map[string]*Tunnel),
+		sessions:           make(map[ssh.Conn][]ssh.Channel),
+		pendingURLs:        make(map[ssh.Conn][]string),
+		tunnelManager:      nil, // Set later via SetTunnelManager
+		certificateManager: nil, // Set later via SetCertificateManager
 	}
 }
 
 func (s *Server) SetTunnelManager(tm TunnelManager) {
 	s.tunnelManager = tm
+}
+
+func (s *Server) SetCertificateManager(cm CertificateManager) {
+	s.certificateManager = cm
+}
+
+// GetActiveTunnelSubdomains implements the TunnelProvider interface for ACME client
+func (s *Server) GetActiveTunnelSubdomains() []string {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	
+	var subdomains []string
+	for subdomain := range s.tunnels {
+		subdomains = append(subdomains, subdomain)
+	}
+	
+	return subdomains
 }
 
 // HandleTunnelRequest exposes the handleTunnelRequest method for integration testing
@@ -82,6 +108,13 @@ func (s *Server) RemoveTunnel(subdomain string) {
 	// Also remove from proxy if available
 	if s.tunnelManager != nil {
 		s.tunnelManager.RemoveTunnel(subdomain)
+	}
+	
+	// Clean up certificate for this subdomain
+	if s.certificateManager != nil {
+		if err := s.certificateManager.CleanupSubdomainCertificate(subdomain); err != nil {
+			log.Printf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
+		}
 	}
 }
 
@@ -118,6 +151,14 @@ func (s *Server) CleanupDisconnectedTunnels() {
 				if s.tunnelManager != nil {
 					s.tunnelManager.RemoveTunnel(subdomain)
 				}
+				
+				// Clean up certificate for this subdomain
+				if s.certificateManager != nil {
+					if err := s.certificateManager.CleanupSubdomainCertificate(subdomain); err != nil {
+						log.Printf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
+					}
+				}
+				
 				log.Printf("Cleaned up disconnected tunnel: %s", subdomain)
 			}
 		}
@@ -435,6 +476,16 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	}
 	s.mutex.Unlock()
 	
+	// Ensure certificate exists for this subdomain
+	if s.certificateManager != nil {
+		go func() {
+			ctx := context.Background()
+			if err := s.certificateManager.EnsureSubdomainCertificate(ctx, subdomain); err != nil {
+				log.Printf("Failed to ensure certificate for subdomain %s: %v", subdomain, err)
+			}
+		}()
+	}
+	
 	// Build complete URLs for the user
 	// Use external ports if set, otherwise fall back to internal ports
 	httpExternalPort := s.config.HTTPExternalPort
@@ -470,11 +521,11 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 
 	// Write tunnel URLs to SSH channel for client to see
 	if channel != nil {
-		fmt.Fprintf(channel, "\n🎉 Tunnel Created Successfully!\n")
-		fmt.Fprintf(channel, "🌐 HTTP URL:  %s\n", httpURL)
-		fmt.Fprintf(channel, "🔒 HTTPS URL: %s (when HTTPS is enabled)\n", httpsURL)
-		fmt.Fprintf(channel, "\n💡 Your local service on port %d is now publicly accessible!\n", requestedPort)
-		fmt.Fprintf(channel, "   Share these URLs with anyone who needs access.\n\n")
+		fmt.Fprintf(channel, "\r\n🎉 Tunnel Created Successfully!\r\n")
+		fmt.Fprintf(channel, "🌐 HTTP URL:  %s\r\n", httpURL)
+		fmt.Fprintf(channel, "🔒 HTTPS URL: %s (when HTTPS is enabled)\r\n", httpsURL)
+		fmt.Fprintf(channel, "\r\n💡 Your local service on port %d is now publicly accessible!\r\n", requestedPort)
+		fmt.Fprintf(channel, "   Share these URLs with anyone who needs access.\r\n\r\n")
 	} else {
 		// Send tunnel URLs to all active sessions for this connection
 		s.sendTunnelURLsToSessions(conn, httpURL, httpsURL)
@@ -579,7 +630,7 @@ func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Con
 
 // sendTunnelURLsToSessions sends tunnel URL information to all active sessions for the given connection
 func (s *Server) sendTunnelURLsToSessions(conn ssh.Conn, httpURL, httpsURL string) {
-	tunnelMessage := fmt.Sprintf("\n🎉 Tunnel Created Successfully!\n🌐 HTTP URL:  %s\n🔒 HTTPS URL: %s (when HTTPS is enabled)\n\n💡 Your local service is now publicly accessible!\n   Share these URLs with anyone who needs access.\n\n", httpURL, httpsURL)
+	tunnelMessage := fmt.Sprintf("\r\n🎉 Tunnel Created Successfully!\r\n🌐 HTTP URL:  %s\r\n🔒 HTTPS URL: %s (when HTTPS is enabled)\r\n\r\n💡 Your local service is now publicly accessible!\r\n   Share these URLs with anyone who needs access.\r\n\r\n", httpURL, httpsURL)
 	
 	s.mutex.Lock()
 	sessions := s.sessions[conn]

@@ -17,5 +17,8 @@ services:
       - ACME_STAGING=true
       - SSH_AUTHORIZED_KEYS=/data/authorized_keys
     volumes:
-      - ./data:/data
+      - ssh_tunnel_data:/data
     restart: unless-stopped
+
+volumes:
+  ssh_tunnel_data:

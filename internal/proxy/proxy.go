@@ -1,10 +1,14 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -49,6 +53,11 @@ func (p *Proxy) GetTunnel(subdomain string) (string, bool) {
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check for ACME challenge requests first
+	if p.handleACMEChallenge(w, r) {
+		return
+	}
+	
 	// Extract subdomain from host
 	subdomain, valid := extractSubdomain(r.Host, p.config.Domain)
 	if !valid {
@@ -81,6 +90,52 @@ func (p *Proxy) Start() error {
 	return http.ListenAndServe(fmt.Sprintf(":%d", p.config.HTTPPort), p)
 }
 
+// StartHTTPS starts the HTTPS server with TLS certificates
+func (p *Proxy) StartHTTPS() error {
+	// Check if certificate files exist
+	if _, err := os.Stat(p.config.ACMECertPath); os.IsNotExist(err) {
+		return fmt.Errorf("certificate file not found: %s", p.config.ACMECertPath)
+	}
+	if _, err := os.Stat(p.config.ACMEKeyPath); os.IsNotExist(err) {
+		return fmt.Errorf("key file not found: %s", p.config.ACMEKeyPath)
+	}
+	
+	// Load TLS certificate
+	cert, err := tls.LoadX509KeyPair(p.config.ACMECertPath, p.config.ACMEKeyPath)
+	if err != nil {
+		return fmt.Errorf("loading TLS certificate: %w", err)
+	}
+	
+	// Create TLS config
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+	
+	// Create HTTPS server
+	server := &http.Server{
+		Addr:      fmt.Sprintf(":%d", p.config.HTTPSPort),
+		Handler:   p,
+		TLSConfig: tlsConfig,
+	}
+	
+	log.Printf("Starting HTTPS server on port %d", p.config.HTTPSPort)
+	return server.ListenAndServeTLS("", "")
+}
+
+// StartBoth starts both HTTP and HTTPS servers concurrently
+func (p *Proxy) StartBoth() error {
+	// Start HTTP server in goroutine
+	go func() {
+		log.Printf("Starting HTTP server on port %d", p.config.HTTPPort)
+		if err := p.Start(); err != nil {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
+	
+	// Start HTTPS server in main goroutine
+	return p.StartHTTPS()
+}
+
 // extractSubdomain extracts the subdomain from a host given a base domain
 // Returns (subdomain, valid) where valid indicates if the host matches the domain pattern
 func extractSubdomain(host, domain string) (string, bool) {
@@ -110,4 +165,49 @@ func extractSubdomain(host, domain string) (string, bool) {
 	}
 	
 	return subdomain, true
+}
+
+// handleACMEChallenge handles ACME HTTP-01 challenge requests
+// Returns true if the request was handled, false otherwise
+func (p *Proxy) handleACMEChallenge(w http.ResponseWriter, r *http.Request) bool {
+	// Check if this is an ACME challenge request
+	if !strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
+		return false
+	}
+	
+	// Extract the token from the path
+	token := strings.TrimPrefix(r.URL.Path, "/.well-known/acme-challenge/")
+	if token == "" {
+		http.Error(w, "Invalid challenge token", http.StatusBadRequest)
+		return true
+	}
+	
+	// Read the challenge file
+	challengePath := filepath.Join(p.config.ACMEChallengeDir, token)
+	content, err := os.ReadFile(challengePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "Challenge not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error reading challenge", http.StatusInternalServerError)
+		}
+		return true
+	}
+	
+	// Serve the challenge content
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write(content)
+	return true
+}
+
+// GetTunnels returns a copy of all current tunnels (for monitoring/debugging)
+func (p *Proxy) GetTunnels() map[string]string {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	
+	tunnels := make(map[string]string)
+	for k, v := range p.tunnels {
+		tunnels[k] = v
+	}
+	return tunnels
 }

@@ -15,6 +15,12 @@ type Config struct {
 	HTTPSExternalPort int
 	SSHExternalPort   int
 	ACMEStaging       bool
+	ACMECertPath      string
+	ACMEKeyPath       string
+	ACMEChallengeDir  string
+	ACMERenewalDays   int
+	ACMEForceLocal    bool  // Force ACME even for local domains (for custom PKI)
+	ACMEDirectoryURL  string // Custom ACME directory URL (empty = Let's Encrypt)
 	AuthorizedKeys    string
 }
 
@@ -29,6 +35,12 @@ func Load() *Config {
 		HTTPSExternalPort: getEnvInt("HTTPS_EXTERNAL_PORT", 0), // 0 means use HTTPSPort
 		SSHExternalPort:   getEnvInt("SSH_EXTERNAL_PORT", 0), // 0 means use SSHPort
 		ACMEStaging:       getEnv("ACME_STAGING", "true") == "true",
+		ACMECertPath:      getEnv("ACME_CERT_PATH", "/data/certs/fullchain.pem"),
+		ACMEKeyPath:       getEnv("ACME_KEY_PATH", "/data/certs/key.pem"),
+		ACMEChallengeDir:  getEnv("ACME_CHALLENGE_DIR", "/data/acme-challenge"),
+		ACMERenewalDays:   getEnvInt("ACME_RENEWAL_DAYS", 30),
+		ACMEForceLocal:    getEnv("ACME_FORCE_LOCAL", "false") == "true",
+		ACMEDirectoryURL:  getEnv("ACME_DIRECTORY_URL", ""),
 		AuthorizedKeys:    getEnv("SSH_AUTHORIZED_KEYS", "/data/authorized_keys"),
 	}
 	
@@ -58,3 +70,4 @@ func getEnvInt(key string, fallback int) int {
 	}
 	return fallback
 }
+

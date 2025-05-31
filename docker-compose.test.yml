@@ -13,7 +13,7 @@ services:
       - SSH_EXTERNAL_PORT=22
       - ACME_STAGING=true
     volumes:
-      - ./data:/data
+      - ssh_tunnel_test_data:/data
     networks:
       - tunnel-net
     healthcheck:
@@ -78,6 +78,9 @@ services:
       - MOCK_HOST=mock-server
       - MOCK_PORT=3000
     command: ["./integration-test.sh"]
+
+volumes:
+  ssh_tunnel_test_data:
 
 networks:
   tunnel-net:

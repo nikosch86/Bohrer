@@ -32,14 +32,41 @@ func TestLoad(t *testing.T) {
 	if cfg.HTTPSExternalPort != cfg.HTTPSPort {
 		t.Errorf("Expected HTTPSExternalPort to default to HTTPSPort %d, got %d", cfg.HTTPSPort, cfg.HTTPSExternalPort)
 	}
+	
+	// Test ACME defaults
+	if cfg.ACMEStaging != true {
+		t.Errorf("Expected ACME staging to default to true, got %v", cfg.ACMEStaging)
+	}
+	
+	if cfg.ACMECertPath != "/data/certs/fullchain.pem" {
+		t.Errorf("Expected default ACME cert path '/data/certs/fullchain.pem', got %s", cfg.ACMECertPath)
+	}
+	
+	if cfg.ACMEKeyPath != "/data/certs/key.pem" {
+		t.Errorf("Expected default ACME key path '/data/certs/key.pem', got %s", cfg.ACMEKeyPath)
+	}
+	
+	if cfg.ACMEChallengeDir != "/data/acme-challenge" {
+		t.Errorf("Expected default ACME challenge dir '/data/acme-challenge', got %s", cfg.ACMEChallengeDir)
+	}
+	
+	if cfg.ACMERenewalDays != 30 {
+		t.Errorf("Expected default ACME renewal days 30, got %d", cfg.ACMERenewalDays)
+	}
+	
+	if cfg.ACMEDirectoryURL != "" {
+		t.Errorf("Expected default ACME directory URL to be empty, got %s", cfg.ACMEDirectoryURL)
+	}
 }
 
 func TestLoadWithEnv(t *testing.T) {
 	os.Setenv("DOMAIN", "test.com")
 	os.Setenv("SSH_PORT", "2223")
+	os.Setenv("ACME_DIRECTORY_URL", "https://custom-ca.example.com/directory")
 	defer func() {
 		os.Unsetenv("DOMAIN")
 		os.Unsetenv("SSH_PORT")
+		os.Unsetenv("ACME_DIRECTORY_URL")
 	}()
 	
 	cfg := Load()
@@ -50,6 +77,10 @@ func TestLoadWithEnv(t *testing.T) {
 	
 	if cfg.SSHPort != 2223 {
 		t.Errorf("Expected SSH port 2223, got %d", cfg.SSHPort)
+	}
+	
+	if cfg.ACMEDirectoryURL != "https://custom-ca.example.com/directory" {
+		t.Errorf("Expected ACME directory URL 'https://custom-ca.example.com/directory', got %s", cfg.ACMEDirectoryURL)
 	}
 }
 

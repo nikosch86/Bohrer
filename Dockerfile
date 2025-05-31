@@ -13,6 +13,6 @@ WORKDIR /root/
 
 COPY --from=builder /app/ssh-tunnel .
 
-EXPOSE 2222 8080 8443
+EXPOSE 22 80 443
 
 CMD ["./ssh-tunnel"]

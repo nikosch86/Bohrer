@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -475,5 +477,217 @@ func TestAddTunnelOverwrite(t *testing.T) {
 	
 	if target != "localhost:4000" {
 		t.Errorf("Expected 'localhost:4000', got '%s'", target)
+	}
+}
+
+func TestACMEChallengeHandler(t *testing.T) {
+	// Create temporary directory for ACME challenges
+	tempDir, err := os.MkdirTemp("", "acme-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "test.com",
+		HTTPPort:         8080,
+		HTTPSPort:        8443,
+		ACMEChallengeDir: tempDir,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Create a challenge file
+	token := "test-token-12345"
+	keyAuth := "test-key-auth-content"
+	challengePath := filepath.Join(tempDir, token)
+	
+	err = os.WriteFile(challengePath, []byte(keyAuth), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create challenge file: %v", err)
+	}
+
+	// Test ACME challenge request
+	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/"+token, nil)
+	req.Host = "test.com"
+
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	// Check response
+	if recorder.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+	if body != keyAuth {
+		t.Errorf("Expected '%s', got '%s'", keyAuth, body)
+	}
+
+	contentType := recorder.Header().Get("Content-Type")
+	if contentType != "text/plain" {
+		t.Errorf("Expected 'text/plain', got '%s'", contentType)
+	}
+}
+
+func TestACMEChallengeNotFound(t *testing.T) {
+	// Create temporary directory for ACME challenges
+	tempDir, err := os.MkdirTemp("", "acme-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "test.com",
+		HTTPPort:         8080,
+		HTTPSPort:        8443,
+		ACMEChallengeDir: tempDir,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test request for non-existent challenge
+	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/nonexistent", nil)
+	req.Host = "test.com"
+
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	// Check response
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404, got %d", recorder.Code)
+	}
+}
+
+func TestACMEChallengeInvalidToken(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "acme-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "test.com",
+		HTTPPort:         8080,
+		HTTPSPort:        8443,
+		ACMEChallengeDir: tempDir,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test request with empty token
+	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/", nil)
+	req.Host = "test.com"
+
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	// Check response
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", recorder.Code)
+	}
+}
+
+func TestNonACMERequest(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "acme-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "test.com",
+		HTTPPort:         8080,
+		HTTPSPort:        8443,
+		ACMEChallengeDir: tempDir,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test normal request (not ACME challenge)
+	req := httptest.NewRequest("GET", "/normal-path", nil)
+	req.Host = "test123.test.com"
+
+	recorder := httptest.NewRecorder()
+	proxy.ServeHTTP(recorder, req)
+
+	// Should get tunnel not found (since we didn't add any tunnels)
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404, got %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, "Tunnel not found") {
+		t.Errorf("Expected 'Tunnel not found' in response, got '%s'", body)
+	}
+}
+
+func TestGetTunnels(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test empty tunnels
+	tunnels := proxy.GetTunnels()
+	if len(tunnels) != 0 {
+		t.Errorf("Expected 0 tunnels, got %d", len(tunnels))
+	}
+
+	// Add some tunnels
+	proxy.AddTunnel("test1", "localhost:3001")
+	proxy.AddTunnel("test2", "localhost:3002")
+
+	tunnels = proxy.GetTunnels()
+	if len(tunnels) != 2 {
+		t.Errorf("Expected 2 tunnels, got %d", len(tunnels))
+	}
+
+	if tunnels["test1"] != "localhost:3001" {
+		t.Errorf("Expected 'localhost:3001', got '%s'", tunnels["test1"])
+	}
+
+	if tunnels["test2"] != "localhost:3002" {
+		t.Errorf("Expected 'localhost:3002', got '%s'", tunnels["test2"])
+	}
+
+	// Modify returned map should not affect original
+	tunnels["test1"] = "modified"
+	originalTunnels := proxy.GetTunnels()
+	if originalTunnels["test1"] != "localhost:3001" {
+		t.Error("GetTunnels should return a copy, not the original map")
+	}
+}
+
+func TestGetTunnel(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		HTTPPort:  8080,
+		HTTPSPort: 8443,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test non-existent tunnel
+	target, exists := proxy.GetTunnel("nonexistent")
+	if exists {
+		t.Error("Expected tunnel to not exist")
+	}
+	if target != "" {
+		t.Errorf("Expected empty target, got '%s'", target)
+	}
+
+	// Add tunnel and test
+	proxy.AddTunnel("test", "localhost:3000")
+	target, exists = proxy.GetTunnel("test")
+	if !exists {
+		t.Error("Expected tunnel to exist")
+	}
+	if target != "localhost:3000" {
+		t.Errorf("Expected 'localhost:3000', got '%s'", target)
 	}
 }

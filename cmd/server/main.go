@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
+	"bohrer-go/internal/acme"
+	"bohrer-go/internal/certs"
 	"bohrer-go/internal/config"
 	"bohrer-go/internal/proxy"
 	"bohrer-go/internal/ssh"
@@ -22,6 +25,50 @@ func main() {
 	sshServer := ssh.NewServer(cfg)
 	sshServer.SetTunnelManager(proxyServer)
 	
+	// Create and configure ACME certificate manager
+	var certificateManager *acme.Client
+	if cfg.ACMEEmail != "" {
+		// Try to create ACME client, but don't fail if it can't connect to ACME server
+		client, err := acme.NewClient(cfg)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize ACME client: %v", err)
+			// Generate self-signed certificate as fallback
+			if err := certs.GenerateWildcardCertificate(cfg); err != nil {
+				log.Printf("Failed to generate self-signed certificate: %v", err)
+			}
+		} else {
+			certificateManager = client
+			// Set tunnel provider for per-subdomain certificates
+			certificateManager.SetTunnelProvider(sshServer)
+			// Set certificate manager in SSH server for automatic cert generation
+			sshServer.SetCertificateManager(certificateManager)
+			
+			// Check certificate strategy based on domain type and configuration
+			if client.IsLocalDomain(cfg.Domain) {
+				// Local domain: check if custom ACME directory URL is specified
+				if cfg.ACMEDirectoryURL != "" {
+					log.Printf("Local domain with custom ACME directory URL: %s", cfg.ACMEDirectoryURL)
+					log.Printf("Will use ACME for certificate generation")
+				} else {
+					log.Printf("Local domain detected, generating wildcard self-signed certificate")
+					if err := certs.GenerateWildcardCertificate(cfg); err != nil {
+						log.Printf("Failed to generate wildcard certificate: %v", err)
+					}
+				}
+			} else {
+				log.Printf("Public domain detected, will use ACME for certificate generation")
+			}
+			
+			log.Printf("✅ ACME certificate manager initialized")
+		}
+	} else {
+		log.Printf("No ACME email configured, generating self-signed certificate")
+		// Generate self-signed wildcard certificate
+		if err := certs.GenerateWildcardCertificate(cfg); err != nil {
+			log.Printf("Failed to generate self-signed certificate: %v", err)
+		}
+	}
+	
 	// Start SSH server
 	go func() {
 		log.Printf("Starting SSH server on port %d", cfg.SSHPort)
@@ -30,10 +77,33 @@ func main() {
 		}
 	}()
 
-	// Start HTTP proxy server for tunnel routing
+	// Start HTTP and HTTPS proxy servers for tunnel routing
 	log.Printf("Starting HTTP proxy server on port %d", cfg.HTTPPort)
-	if err := proxyServer.Start(); err != nil {
-		log.Fatalf("HTTP proxy server failed: %v", err)
+	
+	// Check if we should start HTTPS
+	startHTTPS := false
+	if certificateManager != nil {
+		// For now, just start HTTP - HTTPS will be enabled when certificates are available
+		log.Printf("Certificate manager available - HTTPS will be enabled when tunnels are created")
+	} else if _, err := os.Stat(cfg.ACMECertPath); err == nil {
+		// Certificate file exists, try to start HTTPS
+		startHTTPS = true
+		log.Printf("Certificate file found, enabling HTTPS on port %d", cfg.HTTPSPort)
+	}
+	
+	if startHTTPS {
+		if err := proxyServer.StartBoth(); err != nil {
+			log.Printf("HTTPS server failed (falling back to HTTP only): %v", err)
+			// Fall back to HTTP only if HTTPS fails
+			if err := proxyServer.Start(); err != nil {
+				log.Fatalf("HTTP proxy server failed: %v", err)
+			}
+		}
+	} else {
+		// Start HTTP only
+		if err := proxyServer.Start(); err != nil {
+			log.Fatalf("HTTP proxy server failed: %v", err)
+		}
 	}
 }
 
@@ -85,3 +155,4 @@ func displayConfig(cfg *config.Config) {
 	fmt.Println("=====================================")
 	fmt.Println()
 }
+
