@@ -21,6 +21,7 @@ type Config struct {
 	ACMERenewalDays   int
 	ACMEForceLocal    bool  // Force ACME even for local domains (for custom PKI)
 	ACMEDirectoryURL  string // Custom ACME directory URL (empty = Let's Encrypt)
+	SkipACME          bool  // Skip ACME entirely, use self-signed certificates
 	AuthorizedKeys    string
 }
 
@@ -41,6 +42,7 @@ func Load() *Config {
 		ACMERenewalDays:   getEnvInt("ACME_RENEWAL_DAYS", 30),
 		ACMEForceLocal:    getEnv("ACME_FORCE_LOCAL", "false") == "true",
 		ACMEDirectoryURL:  getEnv("ACME_DIRECTORY_URL", ""),
+		SkipACME:          getEnv("SKIP_ACME", "false") == "true",
 		AuthorizedKeys:    getEnv("SSH_AUTHORIZED_KEYS", "/data/authorized_keys"),
 	}
 	

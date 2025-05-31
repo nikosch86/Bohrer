@@ -27,7 +27,7 @@ func main() {
 	
 	// Create and configure ACME certificate manager
 	var certificateManager *acme.Client
-	if cfg.ACMEEmail != "" {
+	if !cfg.SkipACME && cfg.ACMEEmail != "" {
 		// Try to create ACME client, but don't fail if it can't connect to ACME server
 		client, err := acme.NewClient(cfg)
 		if err != nil {
@@ -62,7 +62,11 @@ func main() {
 			log.Printf("✅ ACME certificate manager initialized")
 		}
 	} else {
-		log.Printf("No ACME email configured, generating self-signed certificate")
+		if cfg.SkipACME {
+			log.Printf("ACME disabled (SKIP_ACME=true), generating self-signed certificate")
+		} else {
+			log.Printf("No ACME email configured, generating self-signed certificate")
+		}
 		// Generate self-signed wildcard certificate
 		if err := certs.GenerateWildcardCertificate(cfg); err != nil {
 			log.Printf("Failed to generate self-signed certificate: %v", err)
