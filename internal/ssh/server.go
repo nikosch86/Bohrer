@@ -46,14 +46,13 @@ type Server struct {
 }
 
 type Tunnel struct {
-	Subdomain     string
-	LocalPort     int
-	Channel       ssh.Channel
-	Connections   map[string]net.Conn // Track active forwarded connections
-	ConnMutex     sync.RWMutex        // Protect connections map
-	HTTPURL       string              // Full HTTP URL for this tunnel
-	HTTPSURL      string              // Full HTTPS URL for this tunnel
-	ForwardTarget string              // Target host:port for SSH forwarding (e.g., localhost:3000)
+	Subdomain   string
+	LocalPort   int
+	Channel     ssh.Channel
+	Connections map[string]net.Conn // Track active forwarded connections
+	ConnMutex   sync.RWMutex        // Protect connections map
+	HTTPURL     string              // Full HTTP URL for this tunnel
+	HTTPSURL    string              // Full HTTPS URL for this tunnel
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -211,6 +210,7 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 	go func() {
 		for req := range reqs {
 			if req.Type == "tcpip-forward" {
+				// debug output Payload
 				subdomain, assignedPort := s.handleTunnelRequest(req.Payload, nil, sshConn)
 				if subdomain != "" {
 					// handleTunnelRequest already stored the tunnel, just reply with port
@@ -439,6 +439,8 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	if assignedPort == 0 {
 		// Assign a virtual port for dynamic allocation requests
 		assignedPort = 22000 + (int(time.Now().UnixNano()) % 1000)
+	} else {
+		log.Printf("Using requested port: %d", assignedPort)
 	}
 
 	subdomain := generateSubdomain()
@@ -447,14 +449,8 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	// and forward connections through the SSH tunnel to the client
 	tunnelTarget := fmt.Sprintf("localhost:%d", assignedPort)
 
-	// Determine the SSH forwarding target (where to send connections through SSH tunnel)
-	forwardTarget := "localhost:3000" // default target
-	if requestedPort > 0 {
-		forwardTarget = fmt.Sprintf("localhost:%d", requestedPort)
-	}
-
 	// Start listening on the allocated port for incoming connections
-	go s.startRemoteForwardListener(assignedPort, conn, forwardTarget)
+	go s.startRemoteForwardListener(assignedPort, conn)
 
 	// Register tunnel with proxy if available
 	if s.tunnelManager != nil {
@@ -468,11 +464,10 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	// Store tunnel in SSH server's internal map for lifecycle management
 	s.mutex.Lock()
 	s.tunnels[subdomain] = &Tunnel{
-		Subdomain:     subdomain,
-		LocalPort:     assignedPort,
-		Channel:       channel,
-		Connections:   make(map[string]net.Conn),
-		ForwardTarget: forwardTarget,
+		Subdomain:   subdomain,
+		LocalPort:   assignedPort,
+		Channel:     channel,
+		Connections: make(map[string]net.Conn),
 	}
 	s.mutex.Unlock()
 
@@ -507,9 +502,9 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		httpsURL = fmt.Sprintf("https://%s.%s:%d", subdomain, s.config.Domain, httpsExternalPort)
 	}
 
-	log.Printf("✅ Tunnel created: %s -> %s (port %d, forward to %s)", subdomain, tunnelTarget, assignedPort, forwardTarget)
+	log.Printf("✅ Tunnel created: %s -> %s (port %d)", subdomain, tunnelTarget, assignedPort)
 	log.Printf("🌐 HTTP:  %s", httpURL)
-	log.Printf("🔒 HTTPS: %s (when available)", httpsURL)
+	log.Printf("🔒 HTTPS: %s", httpsURL)
 
 	// Store URLs in tunnel struct for reference
 	s.mutex.Lock()
@@ -536,14 +531,12 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 
 // startRemoteForwardListener starts listening on the allocated port and forwards
 // incoming connections through the SSH tunnel to the client
-func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn, forwardTarget string) {
+func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Printf("Failed to listen on port %d for remote forwarding: %v", port, err)
 		return
 	}
-
-	log.Printf("Started SSH remote forward listener on port %d -> %s", port, forwardTarget)
 
 	// Accept connections and forward them through SSH tunnel
 	go func() {
@@ -558,34 +551,16 @@ func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn, forwardT
 			}
 
 			// Forward this connection through the SSH tunnel
-			go s.forwardConnectionThroughSSH(conn, sshConn, forwardTarget, port)
+			go s.forwardConnectionThroughSSH(conn, sshConn, port)
 		}
 	}()
 }
 
 // forwardConnectionThroughSSH forwards a TCP connection through an SSH tunnel
-func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Conn, forwardTarget string, listeningPort int) {
+func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Conn, listeningPort int) {
 	defer localConn.Close()
 
-	// Parse the forward target (host:port)
-	parts := strings.Split(forwardTarget, ":")
-	if len(parts) != 2 {
-		log.Printf("Invalid forward target format: %s", forwardTarget)
-		return
-	}
-
-	targetHost := parts[0]
-	targetPort := parts[1]
-
-	// Convert port to uint32
-	portNum, err := strconv.Atoi(targetPort)
-	if err != nil {
-		log.Printf("Invalid target port: %s", targetPort)
-		return
-	}
-	targetPortNum := uint32(portNum)
-
-	log.Printf("Forwarding connection to %s:%d through SSH tunnel", targetHost, targetPortNum)
+	log.Printf("forwardConnectionThroughSSH: listeningPort=%d", listeningPort)
 
 	// Get originator address and port from the incoming connection
 	originAddr, originPortStr, _ := net.SplitHostPort(localConn.RemoteAddr().String())
@@ -785,6 +760,7 @@ func parseDirectTcpipPayload(payload []byte) (string, int, error) {
 	portBytes := payload[4+hostLen : 4+hostLen+4]
 	port := int(portBytes[0])<<24 | int(portBytes[1])<<16 | int(portBytes[2])<<8 | int(portBytes[3])
 
+	log.Printf("parseDirectTcpipPayload: host=%s, port=%d", host, port)
 	return host, port, nil
 }
 

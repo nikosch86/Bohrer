@@ -382,11 +382,10 @@ func TestServerTunnelManagement(t *testing.T) {
 	// Test that tunnels map is accessible
 	server.mutex.Lock()
 	server.tunnels["test123"] = &Tunnel{
-		Subdomain:     "test123",
-		LocalPort:     3000,
-		Channel:       nil,
-		Connections:   make(map[string]net.Conn),
-		ForwardTarget: "localhost:3000",
+		Subdomain:   "test123",
+		LocalPort:   3000,
+		Channel:     nil,
+		Connections: make(map[string]net.Conn),
 	}
 	server.mutex.Unlock()
 	
@@ -767,14 +766,12 @@ func TestGetTunnels(t *testing.T) {
 		LocalPort:     3001,
 		Channel:       mockChannel1,
 		Connections:   make(map[string]net.Conn),
-		ForwardTarget: "localhost:3001",
 	}
 	server.tunnels["tunnel2"] = &Tunnel{
 		Subdomain:     "tunnel2",
 		LocalPort:     3002,
 		Channel:       mockChannel2,
 		Connections:   make(map[string]net.Conn),
-		ForwardTarget: "localhost:3002",
 	}
 	server.mutex.Unlock()
 	
@@ -1157,7 +1154,6 @@ func TestHandleDirectTcpipWithTunnel(t *testing.T) {
 		LocalPort:     7777,
 		Channel:       nil,
 		Connections:   make(map[string]net.Conn),
-		ForwardTarget: "localhost:7777",
 	}
 	server.mutex.Unlock()
 	
@@ -1496,7 +1492,6 @@ func TestHandleConnectionDirectTcpip(t *testing.T) {
 		LocalPort:     22080, // Use assigned port from tcpip-forward
 		Channel:       nil,
 		Connections:   make(map[string]net.Conn),
-		ForwardTarget: "localhost:22080",
 	}
 	server.mutex.Unlock()
 	
@@ -1688,7 +1683,6 @@ func TestConnectionCleanupOnDisconnect(t *testing.T) {
 		LocalPort:     3000,
 		Channel:       mockChannel,
 		Connections:   make(map[string]net.Conn), // To be added to Tunnel struct
-		ForwardTarget: "localhost:3000",
 	}
 	server.mutex.Unlock()
 	
@@ -1951,13 +1945,13 @@ func TestForwardConnectionThroughSSH(t *testing.T) {
 	mockSSHConn := &mockSSHConn{}
 	
 	// Test with invalid forward target format
-	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "invalid", 3000)
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
 	
 	// Give it time to process
 	time.Sleep(100 * time.Millisecond)
 	
-	// Test with valid format but unparseable port
-	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "localhost:invalid", 3000)
+	// Test with valid format but unparseable port - skipping as forwardTarget is no longer used
+	// go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
 	
 	// Give it time to process
 	time.Sleep(100 * time.Millisecond)
@@ -1977,14 +1971,14 @@ func TestStartRemoteForwardListener(t *testing.T) {
 	mockSSHConn := &mockSSHConn{}
 	
 	// Test with invalid port (should fail to bind)
-	go server.startRemoteForwardListener(-1, mockSSHConn, "localhost:3000")
+	go server.startRemoteForwardListener(-1, mockSSHConn)
 	
 	// Give it time to process
 	time.Sleep(100 * time.Millisecond)
 	
 	// Test with valid high port number that should be available
 	testPort := 25000
-	go server.startRemoteForwardListener(testPort, mockSSHConn, "localhost:3000")
+	go server.startRemoteForwardListener(testPort, mockSSHConn)
 	
 	// Give it time to start
 	time.Sleep(200 * time.Millisecond)
@@ -2234,7 +2228,7 @@ func TestForwardConnectionErrorPaths(t *testing.T) {
 
 	// Test forwardConnectionThroughSSH error cases
 	// This will trigger the SSH channel open error
-	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, "localhost:3000", 3000)
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
 	
 	// Give time for the goroutine to complete
 	time.Sleep(100 * time.Millisecond)

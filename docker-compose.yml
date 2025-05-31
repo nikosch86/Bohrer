@@ -8,14 +8,15 @@ services:
       - "${HTTPS_EXTERNAL_PORT:-8443}:443"       # HTTPS port
     environment:
       - DOMAIN=${DOMAIN:-localhost}
-      - ACME_EMAIL=admin@example.com
+      - ACME_EMAIL=${ACME_EMAIL:-}
+      - SKIP_ACME=${SKIP_ACME:-false}
       - SSH_PORT=22
       - HTTP_PORT=80
       - HTTPS_PORT=443
       - HTTP_EXTERNAL_PORT=${HTTP_EXTERNAL_PORT:-8080}
       - HTTPS_EXTERNAL_PORT=${HTTPS_EXTERNAL_PORT:-8443}
-      - ACME_STAGING=true
-      - SSH_AUTHORIZED_KEYS=/data/authorized_keys
+      - ACME_STAGING=${ACME_STAGING:-true}
+      - SSH_AUTHORIZED_KEYS=${SSH_AUTHORIZED_KEYS:-/data/authorized_keys}
     volumes:
       - ssh_tunnel_data:/data
     restart: unless-stopped

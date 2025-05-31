@@ -4,7 +4,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . .
+# Copy only Go source files that affect the build
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build -o ssh-tunnel ./cmd/server
 
 FROM alpine:latest

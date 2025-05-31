@@ -1,7 +1,27 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.23-alpine AS tools
+
+# Install system dependencies
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Install Go development tools
+RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+RUN go install golang.org/x/vuln/cmd/govulncheck@latest
 RUN go install golang.org/x/tools/cmd/deadcode@latest
+
+# Create final image with all tools
+FROM golang:1.23-alpine
+
+# Install system dependencies
+RUN apk add --no-cache git ca-certificates bc
+
+WORKDIR /app
+
+# Copy installed tools from builder
+COPY --from=tools /go/bin/ /go/bin/
+
+# Ensure tools are in PATH
+ENV PATH="/go/bin:${PATH}"
