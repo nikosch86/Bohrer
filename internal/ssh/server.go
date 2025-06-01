@@ -199,7 +199,7 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 
 	sshConn, chans, reqs, err := ssh.NewServerConn(conn, config)
 	if err != nil {
-		log.Printf("Failed to handshake: %v", err)
+		// log.Printf("Failed to handshake: %v", err)
 		return
 	}
 	defer sshConn.Close()
