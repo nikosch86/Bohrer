@@ -4,6 +4,7 @@ FROM alpine:latest
 # Install SSH client and tools
 RUN apk add --no-cache \
     openssh-client \
+    sshpass \
     bash \
     curl \
     netcat-openbsd \

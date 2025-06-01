@@ -247,11 +247,11 @@ test_http_tunneling() {
 test_webui_http_404() {
     local service="http-client"
     > "${LOG_DIR}/$service.log"
-    
+
     # Test that WebUI returns 404 on HTTP (non-HTTPS)
     exec_in_container $service curl -s -o /dev/null -w "%{http_code}" http://ssh-server/
     HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
-    
+
     if [ "$HTTP_STATUS" = "404" ]; then
         return 0
     else
@@ -264,11 +264,11 @@ test_webui_http_404() {
 test_webui_https_wrong_credentials() {
     local service="http-client"
     > "${LOG_DIR}/$service.log"
-    
+
     # Test with wrong credentials
     exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" -u wronguser:wrongpass https://ssh-server/
     HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
-    
+
     if [ "$HTTP_STATUS" = "401" ]; then
         return 0
     else
@@ -281,11 +281,11 @@ test_webui_https_wrong_credentials() {
 test_webui_https_no_credentials() {
     local service="http-client"
     > "${LOG_DIR}/$service.log"
-    
+
     # Test without credentials
     exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" https://ssh-server/
     HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
-    
+
     if [ "$HTTP_STATUS" = "401" ]; then
         return 0
     else
@@ -298,25 +298,25 @@ test_webui_https_no_credentials() {
 test_webui_https_correct_credentials() {
     local service="http-client"
     > "${LOG_DIR}/$service.log"
-    
+
     # Get server logs and extract the WebUI credentials
     docker compose -f "$COMPOSE_FILE" logs ssh-server > "${LOG_DIR}/server-startup.log" 2>&1
-    
+
     # Parse username and password from the logs
     WEBUI_USERNAME=$(grep -o "Username: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
     WEBUI_PASSWORD=$(grep -o "Password: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
-    
+
     if [ -z "$WEBUI_USERNAME" ] || [ -z "$WEBUI_PASSWORD" ]; then
         echo "❌ Failed to parse WebUI credentials from server logs"
         echo "Server logs:"
         cat "${LOG_DIR}/server-startup.log"
         return 1
     fi
-    
+
     # Test with correct credentials
     exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/
     HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
-    
+
     if [ "$HTTP_STATUS" = "200" ]; then
         return 0
     else
@@ -330,7 +330,7 @@ test_webui_https_correct_credentials() {
 test_webui_tunnel_display() {
     local service="ssh-client"
     > "${LOG_DIR}/$service.log"
-    
+
     # Start SSH tunnel in background
     exec_in_container $service bash -c "
         ssh -i ./ssh_key -R 0:mock-server:3000 -o StrictHostKeyChecking=no \
@@ -338,32 +338,32 @@ test_webui_tunnel_display() {
             tunnel@ssh-server -p 22 -vN &
         echo \$! > /logs/ssh_pid
     " &
-    
+
     # Wait for tunnel to establish
     sleep 3
-    
+
     # Check if SSH process is still running
     exec_in_container $service cat /logs/ssh_pid 2>/dev/null
     SSH_PID=$(tail -n1 "${LOG_DIR}/$service.log")
-    
+
     if [ -z "$SSH_PID" ] || ! exec_in_container $service kill -0 "$SSH_PID" 2>/dev/null; then
         echo "❌ SSH tunnel failed to establish for WebUI test"
         cat "${LOG_DIR}/$service.log"
         return 1
     fi
-    
+
     # Get WebUI credentials
     docker compose -f "$COMPOSE_FILE" logs ssh-server > "${LOG_DIR}/server-startup.log" 2>&1
     WEBUI_USERNAME=$(grep -o "Username: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
     WEBUI_PASSWORD=$(grep -o "Password: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
-    
+
     # Clear http-client logs
     > "${LOG_DIR}/http-client.log"
-    
+
     # Get WebUI dashboard and check for tunnel information
     exec_in_container http-client curl -k -s -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/
     DASHBOARD_CONTENT=$(cat "${LOG_DIR}/http-client.log")
-    
+
     # Check if dashboard contains tunnel information
     # The WebUI shows the local port mapping (localhost:PORT), not the remote target
     if echo "$DASHBOARD_CONTENT" | grep -q "Active Tunnels" && \
@@ -375,13 +375,247 @@ test_webui_tunnel_display() {
         echo "$DASHBOARD_CONTENT"
         TUNNEL_DISPLAYED=false
     fi
-    
+
     # Cleanup tunnel
     exec_in_container $service kill "$SSH_PID" 2>/dev/null || true
-    
+
     if [ "$TUNNEL_DISPLAYED" = true ]; then
         return 0
     else
+        return 1
+    fi
+}
+
+# Helper function to get WebUI credentials
+get_webui_credentials() {
+    docker compose -f "$COMPOSE_FILE" logs ssh-server > "${LOG_DIR}/server-startup.log" 2>&1
+    WEBUI_USERNAME=$(grep -o "Username: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+    WEBUI_PASSWORD=$(grep -o "Password: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+
+    if [ -z "$WEBUI_USERNAME" ] || [ -z "$WEBUI_PASSWORD" ]; then
+        echo "❌ Failed to parse WebUI credentials from server logs"
+        return 1
+    fi
+
+    export WEBUI_USERNAME WEBUI_PASSWORD
+    return 0
+}
+
+test_webui_user_creation() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Get WebUI credentials
+    if ! get_webui_credentials; then
+        return 1
+    fi
+
+    # Test user creation via WebUI
+    exec_in_container $service curl -k -s -w "%{http_code}" \
+        -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" \
+        -X POST \
+        -d "username=testuser&password=testpassword123" \
+        https://ssh-server/users
+
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+
+    if [ "$HTTP_STATUS" = "303" ]; then  # Redirect after successful creation
+        return 0
+    else
+        echo "❌ User creation failed with status: $HTTP_STATUS (expected 303)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_user_creation_duplicate() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Get WebUI credentials
+    if ! get_webui_credentials; then
+        return 1
+    fi
+
+    # Try to create the same user again (should fail with 409 Conflict)
+    exec_in_container $service curl -k -s -w "%{http_code}" \
+        -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" \
+        -X POST \
+        -d "username=testuser&password=differentpassword" \
+        https://ssh-server/users
+
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+
+    if [ "$HTTP_STATUS" = "409" ]; then  # Conflict - user already exists
+        return 0
+    else
+        echo "❌ Duplicate user creation returned unexpected status: $HTTP_STATUS (expected 409)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_user_list() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Get WebUI credentials
+    if ! get_webui_credentials; then
+        return 1
+    fi
+
+    # Get users page and check if our test user is listed
+    exec_in_container $service curl -k -s -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/users
+    USER_PAGE_CONTENT=$(cat "${LOG_DIR}/$service.log")
+
+    # Check if the test user appears in the user list
+    if echo "$USER_PAGE_CONTENT" | grep -q "testuser"; then
+        return 0
+    else
+        echo "❌ Test user not found in WebUI user list"
+        echo "User page content:"
+        echo "$USER_PAGE_CONTENT"
+        return 1
+    fi
+}
+
+test_ssh_user_authentication() {
+    local service="ssh-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Try to connect with the test user credentials
+    # Check if authentication works by looking for auth success in server logs
+    exec_in_container $service timeout 5s sshpass -p 'testpassword123' ssh \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=5 \
+        -o PreferredAuthentications=password \
+        -o PubkeyAuthentication=no \
+        testuser@ssh-server -p 22 \
+        "echo 'SSH connection successful'" 2>&1
+
+    # Also check server logs for authentication success
+    AUTH_SUCCESS=$(docker compose -f "$COMPOSE_FILE" logs ssh-server | grep "User testuser authenticated successfully" | tail -1)
+
+    # Check if we got the success message or authentication was logged
+    if grep -q "SSH connection successful" "${LOG_DIR}/$service.log" || [ -n "$AUTH_SUCCESS" ]; then
+        return 0
+    else
+        echo "❌ SSH authentication failed with created user"
+        echo "Server logs auth check: '$AUTH_SUCCESS'"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_ssh_user_tunnel_creation() {
+    local service="ssh-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Start SSH tunnel with the test user
+    exec_in_container $service bash -c "
+        sshpass -p 'testpassword123' ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -R 0:mock-server:3000 \
+            testuser@ssh-server -p 22 -vN &
+        echo \$! > /logs/ssh_pid
+    " &
+
+    # Wait for tunnel to establish
+    sleep 3
+
+    # Check if SSH process is still running
+    exec_in_container $service cat /logs/ssh_pid 2>/dev/null
+    SSH_PID=$(tail -n1 "${LOG_DIR}/$service.log")
+
+    if [ -n "$SSH_PID" ] && exec_in_container $service kill -0 "$SSH_PID" 2>/dev/null; then
+        echo "✅ Tunnel creation successful with created user"
+
+        # Check if tunnel appears in WebUI
+        sleep 1
+        > "${LOG_DIR}/http-client.log"
+        get_webui_credentials
+        exec_in_container http-client curl -k -s -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/
+        DASHBOARD_CONTENT=$(cat "${LOG_DIR}/http-client.log")
+
+        if echo "$DASHBOARD_CONTENT" | grep -q "Active Tunnels" && \
+           echo "$DASHBOARD_CONTENT" | grep -q "<td>localhost:[0-9]*</td>"; then
+            echo "✅  Tunnel created and visible in WebUI dashboard"
+        else
+            echo "⚠️  Tunnel created but not visible in WebUI dashboard"
+        fi
+
+        # Cleanup tunnel
+        exec_in_container $service kill "$SSH_PID" 2>/dev/null || true
+        return 0
+    else
+        echo "❌ Tunnel creation failed with created user"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_user_deletion() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Get WebUI credentials
+    if ! get_webui_credentials; then
+        return 1
+    fi
+
+    exec_in_container $service curl -k -s -w "%{http_code}" \
+        -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" \
+        -X DELETE \
+        https://ssh-server/users/testuser
+
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+
+    if [ "$HTTP_STATUS" = "200" ]; then
+        echo "✅ User deletion successful (HTTP 200)"
+
+        # Verify user is no longer in the list
+        > "${LOG_DIR}/$service.log"
+        exec_in_container $service curl -k -s -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/users
+        USER_PAGE_CONTENT=$(cat "${LOG_DIR}/$service.log")
+
+        if ! echo "$USER_PAGE_CONTENT" | grep -q "testuser"; then
+            return 0
+        else
+            echo "❌ User still appears in user list after deletion"
+            return 1
+        fi
+    else
+        echo "❌ User deletion failed with status: $HTTP_STATUS (expected 200)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_ssh_user_authentication_after_deletion() {
+    local service="ssh-client"
+    > "${LOG_DIR}/$service.log"
+
+    # Try to connect with the deleted user credentials (should fail)
+    exec_in_container $service timeout 3s sshpass -p 'testpassword123' ssh \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=3 \
+        -o PreferredAuthentications=password \
+        -o PubkeyAuthentication=no \
+        testuser@ssh-server -p 22 \
+        "echo 'SSH connection successful'" 2>/dev/null
+
+    # Should NOT contain success message
+    if ! grep -q "SSH connection successful" "${LOG_DIR}/$service.log"; then
+        return 0
+    else
+        echo "❌ SSH authentication unexpectedly succeeded for deleted user"
+        cat "${LOG_DIR}/$service.log"
         return 1
     fi
 }
@@ -396,6 +630,15 @@ run_test "WebUI HTTPS rejects wrong credentials" test_webui_https_wrong_credenti
 run_test "WebUI HTTPS rejects no credentials" test_webui_https_no_credentials
 run_test "WebUI HTTPS accepts correct credentials" test_webui_https_correct_credentials
 run_test "WebUI displays active tunnels" test_webui_tunnel_display
+
+# User Management Tests
+run_test "WebUI user creation" test_webui_user_creation
+run_test "WebUI user creation duplicate rejection" test_webui_user_creation_duplicate
+run_test "WebUI user list displays created user" test_webui_user_list
+run_test "SSH authentication with created user" test_ssh_user_authentication
+run_test "SSH tunnel creation with created user" test_ssh_user_tunnel_creation
+run_test "WebUI user deletion" test_webui_user_deletion
+run_test "SSH authentication rejected after user deletion" test_ssh_user_authentication_after_deletion
 
 
 
