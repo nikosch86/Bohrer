@@ -1,9 +1,6 @@
 #!/bin/bash -fu
 # shellcheck disable=SC2317
 
-echo "🚀 E2E Test Orchestrator"
-echo "========================"
-
 # Configuration
 COMPOSE_FILE="docker-compose.e2e.yml"
 LOG_DIR="test/logs"

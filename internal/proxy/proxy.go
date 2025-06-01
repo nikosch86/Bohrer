@@ -3,7 +3,6 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"sync"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/logger"
 )
 
 type Proxy struct {
@@ -31,7 +31,7 @@ func NewProxy(cfg *config.Config) *Proxy {
 func (p *Proxy) AddTunnel(subdomain, target string) error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	p.tunnels[subdomain] = target
 	return nil
 }
@@ -39,7 +39,7 @@ func (p *Proxy) AddTunnel(subdomain, target string) error {
 func (p *Proxy) RemoveTunnel(subdomain string) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	
+
 	delete(p.tunnels, subdomain)
 }
 
@@ -47,7 +47,7 @@ func (p *Proxy) RemoveTunnel(subdomain string) {
 func (p *Proxy) GetTunnel(subdomain string) (string, bool) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	
+
 	target, exists := p.tunnels[subdomain]
 	return target, exists
 }
@@ -57,31 +57,31 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.handleACMEChallenge(w, r) {
 		return
 	}
-	
+
 	// Extract subdomain from host
 	subdomain, valid := extractSubdomain(r.Host, p.config.Domain)
 	if !valid {
 		http.Error(w, "Invalid domain", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Look up tunnel target
 	p.mutex.RLock()
 	target, exists := p.tunnels[subdomain]
 	p.mutex.RUnlock()
-	
+
 	if !exists {
 		http.Error(w, "Tunnel not found for subdomain: "+subdomain, http.StatusNotFound)
 		return
 	}
-	
+
 	// Create reverse proxy to target
 	targetURL, err := url.Parse("http://" + target)
 	if err != nil {
 		http.Error(w, "Invalid tunnel target", http.StatusInternalServerError)
 		return
 	}
-	
+
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 	proxy.ServeHTTP(w, r)
 }
@@ -99,26 +99,26 @@ func (p *Proxy) StartHTTPS() error {
 	if _, err := os.Stat(p.config.ACMEKeyPath); os.IsNotExist(err) {
 		return fmt.Errorf("key file not found: %s", p.config.ACMEKeyPath)
 	}
-	
+
 	// Load TLS certificate
 	cert, err := tls.LoadX509KeyPair(p.config.ACMECertPath, p.config.ACMEKeyPath)
 	if err != nil {
 		return fmt.Errorf("loading TLS certificate: %w", err)
 	}
-	
+
 	// Create TLS config
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}
-	
+
 	// Create HTTPS server
 	server := &http.Server{
 		Addr:      fmt.Sprintf(":%d", p.config.HTTPSPort),
 		Handler:   p,
 		TLSConfig: tlsConfig,
 	}
-	
-	log.Printf("Starting HTTPS server on port %d", p.config.HTTPSPort)
+
+	logger.Debugf("Starting HTTPS server on port %d", p.config.HTTPSPort)
 	return server.ListenAndServeTLS("", "")
 }
 
@@ -126,12 +126,12 @@ func (p *Proxy) StartHTTPS() error {
 func (p *Proxy) StartBoth() error {
 	// Start HTTP server in goroutine
 	go func() {
-		log.Printf("Starting HTTP server on port %d", p.config.HTTPPort)
+		logger.Debugf("Starting HTTP server on port %d", p.config.HTTPPort)
 		if err := p.Start(); err != nil {
-			log.Printf("HTTP server error: %v", err)
+			logger.Errorf("HTTP server error: %v", err)
 		}
 	}()
-	
+
 	// Start HTTPS server in main goroutine
 	return p.StartHTTPS()
 }
@@ -142,12 +142,12 @@ func extractSubdomain(host, domain string) (string, bool) {
 	if host == "" || domain == "" {
 		return "", false
 	}
-	
+
 	// Remove port if present
 	if colonIndex := strings.Index(host, ":"); colonIndex != -1 {
 		host = host[:colonIndex]
 	}
-	
+
 	// Check if host ends with the domain
 	domainSuffix := "." + domain
 	if !strings.HasSuffix(host, domainSuffix) {
@@ -157,13 +157,13 @@ func extractSubdomain(host, domain string) (string, bool) {
 		}
 		return "", false
 	}
-	
+
 	// Extract subdomain
 	subdomain := strings.TrimSuffix(host, domainSuffix)
 	if subdomain == "" {
 		return "", false
 	}
-	
+
 	return subdomain, true
 }
 
@@ -174,14 +174,14 @@ func (p *Proxy) handleACMEChallenge(w http.ResponseWriter, r *http.Request) bool
 	if !strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
 		return false
 	}
-	
+
 	// Extract the token from the path
 	token := strings.TrimPrefix(r.URL.Path, "/.well-known/acme-challenge/")
 	if token == "" {
 		http.Error(w, "Invalid challenge token", http.StatusBadRequest)
 		return true
 	}
-	
+
 	// Read the challenge file
 	challengePath := filepath.Join(p.config.ACMEChallengeDir, token)
 	content, err := os.ReadFile(challengePath)
@@ -193,7 +193,7 @@ func (p *Proxy) handleACMEChallenge(w http.ResponseWriter, r *http.Request) bool
 		}
 		return true
 	}
-	
+
 	// Serve the challenge content
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(content)
@@ -204,7 +204,7 @@ func (p *Proxy) handleACMEChallenge(w http.ResponseWriter, r *http.Request) bool
 func (p *Proxy) GetTunnels() map[string]string {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	
+
 	tunnels := make(map[string]string)
 	for k, v := range p.tunnels {
 		tunnels[k] = v

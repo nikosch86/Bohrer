@@ -8,6 +8,7 @@ services:
       - SSH_PORT=22
       - HTTP_PORT=80
       - HTTPS_PORT=443
+      - LOG_LEVEL=DEBUG
     volumes:
       - e2e_data:/data
       - ./test/test_authorized_keys:/data/authorized_keys:ro
@@ -24,6 +25,7 @@ services:
       dockerfile: Dockerfile.mock
     environment:
       - PORT=3000
+      - LOG_LEVEL=DEBUG
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 1s

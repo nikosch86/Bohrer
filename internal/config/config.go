@@ -23,6 +23,7 @@ type Config struct {
 	ACMEDirectoryURL  string // Custom ACME directory URL (empty = Let's Encrypt)
 	SkipACME          bool  // Skip ACME entirely, use self-signed certificates
 	AuthorizedKeys    string
+	LogLevel          string // Log level: DEBUG, INFO, WARN, ERROR, FATAL
 }
 
 func Load() *Config {
@@ -44,6 +45,7 @@ func Load() *Config {
 		ACMEDirectoryURL:  getEnv("ACME_DIRECTORY_URL", ""),
 		SkipACME:          getEnv("SKIP_ACME", "false") == "true",
 		AuthorizedKeys:    getEnv("SSH_AUTHORIZED_KEYS", "/data/authorized_keys"),
+		LogLevel:          getEnv("LOG_LEVEL", "INFO"),
 	}
 	
 	// If external ports are not set, use internal ports

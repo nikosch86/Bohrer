@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1893,12 +1894,30 @@ func TestAuthenticatePublicKey(t *testing.T) {
 }
 
 func TestLoadAuthorizedKeys(t *testing.T) {
+	// Create a temporary authorized keys file for testing
+	tempFile, err := os.CreateTemp("", "test_authorized_keys")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tempFile.Name())
+	
+	// Write test keys to the file
+	testKeys := `# Test authorized keys file
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest1 test-key-1
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest2 test-key-2
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCtest3 test-key-3
+`
+	if _, err := tempFile.WriteString(testKeys); err != nil {
+		t.Fatalf("Failed to write test keys: %v", err)
+	}
+	tempFile.Close()
+
 	cfg := &config.Config{
 		Domain:         "test.com",
 		SSHPort:        2222,
 		HTTPPort:       8080,
 		HTTPSPort:      8443,
-		AuthorizedKeys: "/app/test/test_authorized_keys",
+		AuthorizedKeys: tempFile.Name(),
 	}
 	
 	server := NewServer(cfg)

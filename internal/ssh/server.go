@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	mathrand "math/rand"
 	"net"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/logger"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -58,7 +58,7 @@ type Tunnel struct {
 func NewServer(cfg *config.Config) *Server {
 	hostKey, err := generateHostKey()
 	if err != nil {
-		log.Fatalf("Failed to generate host key: %v", err)
+		logger.Fatalf("Failed to generate host key: %v", err)
 	}
 
 	return &Server{
@@ -112,7 +112,7 @@ func (s *Server) RemoveTunnel(subdomain string) {
 	// Clean up certificate for this subdomain
 	if s.certificateManager != nil {
 		if err := s.certificateManager.CleanupSubdomainCertificate(subdomain); err != nil {
-			log.Printf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
+			logger.Debugf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
 		}
 	}
 }
@@ -154,11 +154,11 @@ func (s *Server) CleanupDisconnectedTunnels() {
 				// Clean up certificate for this subdomain
 				if s.certificateManager != nil {
 					if err := s.certificateManager.CleanupSubdomainCertificate(subdomain); err != nil {
-						log.Printf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
+						logger.Debugf("Failed to cleanup certificate for subdomain %s: %v", subdomain, err)
 					}
 				}
 
-				log.Printf("Cleaned up disconnected tunnel: %s", subdomain)
+				logger.Infof("Cleaned up disconnected tunnel: %s", subdomain)
 			}
 		}
 	}
@@ -186,7 +186,7 @@ func (s *Server) Start() error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Failed to accept SSH connection: %v", err)
+			logger.Debugf("Failed to accept SSH connection: %v", err)
 			continue
 		}
 
@@ -199,12 +199,12 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 
 	sshConn, chans, reqs, err := ssh.NewServerConn(conn, config)
 	if err != nil {
-		// log.Printf("Failed to handshake: %v", err)
+		// logger.Debugf("Failed to handshake: %v", err)
 		return
 	}
 	defer sshConn.Close()
 
-	log.Printf("SSH connection from %s (%s)", sshConn.RemoteAddr(), sshConn.User())
+	logger.Infof("SSH connection from %s (%s)", sshConn.RemoteAddr(), sshConn.User())
 
 	// Handle global requests (including tcpip-forward)
 	go func() {
@@ -238,7 +238,7 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 				// Handle session channels (for interactive sessions)
 				channel, requests, err := newChannel.Accept()
 				if err != nil {
-					log.Printf("Could not accept session channel: %v", err)
+					logger.Debugf("Could not accept session channel: %v", err)
 					continue
 				}
 
@@ -332,7 +332,7 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 	// This is essential for ssh -N connections that don't open channels
 	err = sshConn.Wait()
 	if err != nil {
-		log.Printf("SSH connection closed with error: %v", err)
+		logger.Debugf("SSH connection closed with error: %v", err)
 	}
 }
 
@@ -360,7 +360,7 @@ func (s *Server) authenticatePublicKey(c ssh.ConnMetadata, pubKey ssh.PublicKey)
 
 	authorizedKeys, err := s.loadAuthorizedKeys()
 	if err != nil {
-		log.Printf("Failed to load authorized keys: %v", err)
+		logger.Debugf("Failed to load authorized keys: %v", err)
 		return nil, fmt.Errorf("public key authentication not available")
 	}
 
@@ -381,7 +381,7 @@ func (s *Server) authenticatePublicKey(c ssh.ConnMetadata, pubKey ssh.PublicKey)
 		authorizedKeyBytes := ssh.MarshalAuthorizedKey(parsedKey)
 
 		if strings.TrimSpace(string(clientKeyBytes)) == strings.TrimSpace(string(authorizedKeyBytes)) {
-			log.Printf("Public key authentication successful for user %s", c.User())
+			logger.Debugf("Public key authentication successful for user %s", c.User())
 			return nil, nil
 		}
 	}
@@ -417,14 +417,14 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	// Parse tcpip-forward request payload
 	// Format: string bind_address, uint32 bind_port
 	if len(payload) < 8 {
-		log.Printf("Invalid tcpip-forward payload length: %d", len(payload))
+		logger.Debugf("Invalid tcpip-forward payload length: %d", len(payload))
 		return "", 0
 	}
 
 	// Skip bind_address (we'll use localhost)
 	addressLen := int(payload[3])
 	if len(payload) < 4+addressLen+4 {
-		log.Printf("Invalid tcpip-forward payload format")
+		logger.Debugf("Invalid tcpip-forward payload format")
 		return "", 0
 	}
 
@@ -440,7 +440,7 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		// Assign a virtual port for dynamic allocation requests
 		assignedPort = 22000 + (int(time.Now().UnixNano()) % 1000)
 	} else {
-		log.Printf("Using requested port: %d", assignedPort)
+		logger.Debugf("Using requested port: %d", assignedPort)
 	}
 
 	subdomain := generateSubdomain()
@@ -456,7 +456,7 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	if s.tunnelManager != nil {
 		err := s.tunnelManager.AddTunnel(subdomain, tunnelTarget)
 		if err != nil {
-			log.Printf("Failed to register tunnel: %v", err)
+			logger.Debugf("Failed to register tunnel: %v", err)
 			return "", 0
 		}
 	}
@@ -476,7 +476,7 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		go func() {
 			ctx := context.Background()
 			if err := s.certificateManager.EnsureSubdomainCertificate(ctx, subdomain); err != nil {
-				log.Printf("Failed to ensure certificate for subdomain %s: %v", subdomain, err)
+				logger.Debugf("Failed to ensure certificate for subdomain %s: %v", subdomain, err)
 			}
 		}()
 	}
@@ -502,9 +502,9 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		httpsURL = fmt.Sprintf("https://%s.%s:%d", subdomain, s.config.Domain, httpsExternalPort)
 	}
 
-	log.Printf("✅ Tunnel created: %s -> %s (port %d)", subdomain, tunnelTarget, assignedPort)
-	log.Printf("🌐 HTTP:  %s", httpURL)
-	log.Printf("🔒 HTTPS: %s", httpsURL)
+	logger.Infof("✅ Tunnel created: %s -> %s (port %d)", subdomain, tunnelTarget, assignedPort)
+	logger.Infof("🌐 HTTP:  %s", httpURL)
+	logger.Infof("🔒 HTTPS: %s", httpsURL)
 
 	// Store URLs in tunnel struct for reference
 	s.mutex.Lock()
@@ -534,7 +534,7 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		log.Printf("Failed to listen on port %d for remote forwarding: %v", port, err)
+		logger.Debugf("Failed to listen on port %d for remote forwarding: %v", port, err)
 		return
 	}
 
@@ -545,7 +545,7 @@ func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				log.Printf("Error accepting connection on port %d: %v", port, err)
+				logger.Debugf("Error accepting connection on port %d: %v", port, err)
 				// If we can't accept connections, exit the listener
 				return
 			}
@@ -583,7 +583,7 @@ func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Con
 	}))
 
 	if err != nil {
-		log.Printf("Failed to open forwarded-tcpip channel: %v", err)
+		logger.Debugf("Failed to open forwarded-tcpip channel: %v", err)
 		return
 	}
 	defer channel.Close()
@@ -639,12 +639,12 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 	// Parse the direct-tcpip payload to get target host and port
 	targetHost, targetPort, err := parseDirectTcpipPayload(newChannel.ExtraData())
 	if err != nil {
-		log.Printf("Failed to parse direct-tcpip payload: %v", err)
+		logger.Debugf("Failed to parse direct-tcpip payload: %v", err)
 		newChannel.Reject(ssh.Prohibited, "invalid payload")
 		return
 	}
 
-	log.Printf("Direct TCP connection request to %s:%d", targetHost, targetPort)
+	logger.Debugf("Direct TCP connection request to %s:%d", targetHost, targetPort)
 
 	// Find the tunnel that matches this port
 	var tunnel *Tunnel
@@ -658,7 +658,7 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 	s.mutex.RUnlock()
 
 	if tunnel == nil {
-		log.Printf("No tunnel found for port %d", targetPort)
+		logger.Debugf("No tunnel found for port %d", targetPort)
 		newChannel.Reject(ssh.Prohibited, "no tunnel for port")
 		return
 	}
@@ -666,7 +666,7 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 	// Accept the SSH channel
 	sshChannel, requests, err := newChannel.Accept()
 	if err != nil {
-		log.Printf("Could not accept direct-tcpip channel: %v", err)
+		logger.Debugf("Could not accept direct-tcpip channel: %v", err)
 		return
 	}
 	defer sshChannel.Close()
@@ -678,7 +678,7 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 	localAddr := fmt.Sprintf("localhost:%d", targetPort)
 	tcpConn, err := net.DialTimeout("tcp", localAddr, 10*time.Second)
 	if err != nil {
-		log.Printf("Failed to connect to local service %s: %v", localAddr, err)
+		logger.Debugf("Failed to connect to local service %s: %v", localAddr, err)
 		return
 	}
 
@@ -696,12 +696,12 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 		tcpConn.Close()
 	}()
 
-	log.Printf("Bridging SSH channel to %s (tunnel: %s)", localAddr, tunnel.Subdomain)
+	logger.Debugf("Bridging SSH channel to %s (tunnel: %s)", localAddr, tunnel.Subdomain)
 
 	// Bridge the connections
 	err = bridgeConnections(sshChannel, tcpConn, 30*time.Minute)
 	if err != nil {
-		log.Printf("Bridge connection ended: %v", err)
+		logger.Debugf("Bridge connection ended: %v", err)
 	}
 }
 
@@ -758,7 +758,7 @@ func parseDirectTcpipPayload(payload []byte) (string, int, error) {
 	portBytes := payload[4+hostLen : 4+hostLen+4]
 	port := int(portBytes[0])<<24 | int(portBytes[1])<<16 | int(portBytes[2])<<8 | int(portBytes[3])
 
-	log.Printf("parseDirectTcpipPayload: host=%s, port=%d", host, port)
+	logger.Debugf("parseDirectTcpipPayload: host=%s, port=%d", host, port)
 	return host, port, nil
 }
 

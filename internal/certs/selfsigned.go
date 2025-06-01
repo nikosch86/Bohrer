@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/logger"
 )
 
 const (
@@ -27,8 +27,8 @@ const (
 // GenerateWildcardCertificate creates a self-signed wildcard certificate for local development
 func GenerateWildcardCertificate(cfg *config.Config) error {
 	domains := []string{cfg.Domain, "*." + cfg.Domain}
-	log.Printf("Generating self-signed wildcard certificate for: %v", domains)
-	
+	logger.Debugf("Generating self-signed wildcard certificate for: %v", domains)
+
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -103,14 +103,14 @@ func GenerateWildcardCertificate(cfg *config.Config) error {
 		return fmt.Errorf("setting key file permissions: %w", err)
 	}
 
-	log.Printf("✅ Wildcard self-signed certificate generated for *.%s", cfg.Domain)
+	logger.Debugf("Wildcard self-signed certificate generated for *.%s", cfg.Domain)
 	return nil
 }
 
 // GenerateSelfSignedCertificate creates a self-signed certificate for specific domains
 func GenerateSelfSignedCertificate(cfg *config.Config, domains []string) error {
-	log.Printf("Generating self-signed certificate for domains: %v", domains)
-	
+	logger.Debugf("Generating self-signed certificate for domains: %v", domains)
+
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -192,6 +192,6 @@ func GenerateSelfSignedCertificate(cfg *config.Config, domains []string) error {
 		return fmt.Errorf("setting key file permissions: %w", err)
 	}
 
-	log.Printf("✅ Self-signed certificate generated for domains: %v", domains)
+	logger.Debugf("Self-signed certificate generated for domains: %v", domains)
 	return nil
 }

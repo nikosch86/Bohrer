@@ -10,7 +10,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/logger"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
@@ -156,7 +156,7 @@ func (c *Client) CheckSubdomainCertificate(subdomain string) (bool, error) {
 	certBytes, err := os.ReadFile(certPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("Certificate file for subdomain %s does not exist, needs to be obtained", subdomain)
+			logger.Debugf("Certificate file for subdomain %s does not exist, needs to be obtained", subdomain)
 			return false, nil
 		}
 		return false, fmt.Errorf("reading certificate for subdomain %s: %w", subdomain, err)
@@ -164,32 +164,32 @@ func (c *Client) CheckSubdomainCertificate(subdomain string) (bool, error) {
 
 	certBlock, _ := pem.Decode(certBytes)
 	if certBlock == nil {
-		log.Printf("Certificate PEM data for subdomain %s is invalid, needs renewal", subdomain)
+		logger.Debugf("Certificate PEM data for subdomain %s is invalid, needs renewal", subdomain)
 		return false, nil
 	}
 
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
-		log.Printf("Failed to parse certificate for subdomain %s: %v", subdomain, err)
+		logger.Debugf("Failed to parse certificate for subdomain %s: %v", subdomain, err)
 		return false, nil
 	}
 
 	// Check if certificate is valid for the domain
 	if err := cert.VerifyHostname(fullDomain); err != nil {
-		log.Printf("Certificate is not valid for domain %s: %v", fullDomain, err)
+		logger.Debugf("Certificate is not valid for domain %s: %v", fullDomain, err)
 		return false, nil
 	}
 
 	// Check expiration
 	daysUntilExpiry := int(time.Until(cert.NotAfter).Hours() / 24)
-	log.Printf("Certificate for subdomain %s expires in %d days", subdomain, daysUntilExpiry)
+	logger.Debugf("Certificate for subdomain %s expires in %d days", subdomain, daysUntilExpiry)
 
 	if daysUntilExpiry <= c.config.ACMERenewalDays {
-		log.Printf("Certificate for subdomain %s expires within %d days, renewal needed", subdomain, c.config.ACMERenewalDays)
+		logger.Debugf("Certificate for subdomain %s expires within %d days, renewal needed", subdomain, c.config.ACMERenewalDays)
 		return false, nil
 	}
 
-	log.Printf("Certificate for subdomain %s is valid and not due for renewal", subdomain)
+	logger.Debugf("Certificate for subdomain %s is valid and not due for renewal", subdomain)
 	return true, nil
 }
 
@@ -198,7 +198,7 @@ func (c *Client) CheckCertificate(domains []string) (bool, error) {
 	certBytes, err := os.ReadFile(c.config.ACMECertPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Println("Certificate file does not exist, needs to be obtained")
+			logger.Debugf("Certificate file does not exist, needs to be obtained")
 			return false, nil // Certificate doesn't exist, needs to be obtained
 		}
 		return false, fmt.Errorf("reading certificate: %w", err)
@@ -206,41 +206,41 @@ func (c *Client) CheckCertificate(domains []string) (bool, error) {
 
 	certBlock, _ := pem.Decode(certBytes)
 	if certBlock == nil {
-		log.Println("Certificate PEM data is invalid, needs renewal")
+		logger.Debugf("Certificate PEM data is invalid, needs renewal")
 		return false, nil
 	}
 
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
-		log.Printf("Failed to parse certificate: %v", err)
+		logger.Debugf("Failed to parse certificate: %v", err)
 		return false, nil
 	}
 
 	// Check if certificate is valid for all required domains
 	for _, domain := range domains {
 		if err := cert.VerifyHostname(domain); err != nil {
-			log.Printf("Certificate is not valid for domain %s: %v", domain, err)
+			logger.Debugf("Certificate is not valid for domain %s: %v", domain, err)
 			return false, nil // Certificate needs to be renewed
 		}
 	}
 
 	// Check expiration
 	daysUntilExpiry := int(time.Until(cert.NotAfter).Hours() / 24)
-	log.Printf("Certificate expires in %d days", daysUntilExpiry)
+	logger.Debugf("Certificate expires in %d days", daysUntilExpiry)
 
 	if daysUntilExpiry <= c.config.ACMERenewalDays {
-		log.Printf("Certificate expires within %d days, renewal needed", c.config.ACMERenewalDays)
+		logger.Debugf("Certificate expires within %d days, renewal needed", c.config.ACMERenewalDays)
 		return false, nil
 	}
 
-	log.Println("Certificate is valid and not due for renewal")
+	logger.Debugf("Certificate is valid and not due for renewal")
 	return true, nil
 }
 
 // ObtainSubdomainCertificate obtains a new certificate for a specific subdomain
 func (c *Client) ObtainSubdomainCertificate(ctx context.Context, subdomain string) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
-	log.Printf("Obtaining certificate for subdomain domain: %s", fullDomain)
+	logger.Debugf("Obtaining certificate for subdomain domain: %s", fullDomain)
 
 	// Check rate limits before attempting
 	if err := c.rateLimiter.CanMakeNewOrder(); err != nil {
@@ -292,15 +292,15 @@ func (c *Client) ObtainSubdomainCertificate(ctx context.Context, subdomain strin
 		return fmt.Errorf("saving private key for subdomain %s: %w", subdomain, err)
 	}
 
-	log.Printf("Certificate for subdomain %s saved to %s", subdomain, certPath)
-	log.Printf("Private key for subdomain %s saved to %s", subdomain, keyPath)
+	logger.Debugf("Certificate for subdomain %s saved to %s", subdomain, certPath)
+	logger.Debugf("Private key for subdomain %s saved to %s", subdomain, keyPath)
 
 	return nil
 }
 
 // ObtainCertificate obtains a new certificate for the given domains (legacy - kept for backward compatibility)
 func (c *Client) ObtainCertificate(ctx context.Context, domains []string) error {
-	log.Printf("Obtaining certificate for domains: %v", domains)
+	logger.Debugf("Obtaining certificate for domains: %v", domains)
 
 	// Check rate limits before attempting
 	if err := c.rateLimiter.CanMakeNewOrder(); err != nil {
@@ -354,8 +354,8 @@ func (c *Client) ObtainCertificate(ctx context.Context, domains []string) error 
 		return fmt.Errorf("saving private key: %w", err)
 	}
 
-	log.Printf("Certificate saved to %s", c.config.ACMECertPath)
-	log.Printf("Private key saved to %s", c.config.ACMEKeyPath)
+	logger.Debugf("Certificate saved to %s", c.config.ACMECertPath)
+	logger.Debugf("Private key saved to %s", c.config.ACMEKeyPath)
 
 	return nil
 }
@@ -438,23 +438,23 @@ func (c *Client) IsLocalDomain(domain string) bool {
 // EnsureCertificatesForActiveTunnels ensures valid certificates exist for all active tunnel subdomains
 func (c *Client) EnsureCertificatesForActiveTunnels(ctx context.Context) error {
 	if c.tunnelProvider == nil {
-		log.Println("No tunnel provider set, skipping certificate management")
+		logger.Debugf("No tunnel provider set, skipping certificate management")
 		return nil
 	}
 	
 	// Get active tunnel subdomains
 	subdomains := c.tunnelProvider.GetActiveTunnelSubdomains()
 	if len(subdomains) == 0 {
-		log.Println("No active tunnels, no certificates needed")
+		logger.Debugf("No active tunnels, no certificates needed")
 		return nil
 	}
 	
-	log.Printf("Ensuring certificates for active tunnel subdomains: %v", subdomains)
+	logger.Debugf("Ensuring certificates for active tunnel subdomains: %v", subdomains)
 	
 	// Ensure certificate for each subdomain
 	for _, subdomain := range subdomains {
 		if err := c.EnsureSubdomainCertificate(ctx, subdomain); err != nil {
-			log.Printf("Failed to ensure certificate for subdomain %s: %v", subdomain, err)
+			logger.Debugf("Failed to ensure certificate for subdomain %s: %v", subdomain, err)
 			// Continue with other subdomains instead of failing completely
 			continue
 		}
@@ -471,7 +471,7 @@ func (c *Client) EnsureCertificate(ctx context.Context) error {
 
 // GenerateSelfSignedCertificate creates a self-signed certificate for local domains
 func (c *Client) GenerateSelfSignedCertificate(domains []string) error {
-	log.Printf("Generating self-signed certificate for domains: %v", domains)
+	logger.Debugf("Generating self-signed certificate for domains: %v", domains)
 
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -554,8 +554,8 @@ func (c *Client) GenerateSelfSignedCertificate(domains []string) error {
 		return fmt.Errorf("setting key file permissions: %w", err)
 	}
 
-	log.Printf("Self-signed certificate saved to %s", c.config.ACMECertPath)
-	log.Printf("Private key saved to %s", c.config.ACMEKeyPath)
+	logger.Debugf("Self-signed certificate saved to %s", c.config.ACMECertPath)
+	logger.Debugf("Private key saved to %s", c.config.ACMEKeyPath)
 
 	return nil
 }
@@ -567,15 +567,15 @@ func (c *Client) CleanupSubdomainCertificate(subdomain string) error {
 	
 	// Remove certificate file
 	if err := os.Remove(certPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("Warning: failed to remove certificate file for subdomain %s: %v", subdomain, err)
+		logger.Debugf("Warning: failed to remove certificate file for subdomain %s: %v", subdomain, err)
 	}
 	
 	// Remove key file
 	if err := os.Remove(keyPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("Warning: failed to remove key file for subdomain %s: %v", subdomain, err)
+		logger.Debugf("Warning: failed to remove key file for subdomain %s: %v", subdomain, err)
 	}
 	
-	log.Printf("Cleaned up certificate files for subdomain %s", subdomain)
+	logger.Debugf("Cleaned up certificate files for subdomain %s", subdomain)
 	return nil
 }
 
@@ -585,7 +585,7 @@ func (c *Client) EnsureSubdomainCertificate(ctx context.Context, subdomain strin
 	
 	// Check if domain is valid
 	if !c.IsValidDomain(fullDomain) {
-		log.Printf("Domain %s is not valid for certificate generation", fullDomain)
+		logger.Debugf("Domain %s is not valid for certificate generation", fullDomain)
 		return nil
 	}
 	
@@ -615,7 +615,7 @@ func (c *Client) EnsureSubdomainCertificate(ctx context.Context, subdomain strin
 // GenerateSubdomainSelfSignedCertificate creates a self-signed certificate for a specific subdomain
 func (c *Client) GenerateSubdomainSelfSignedCertificate(subdomain string) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
-	log.Printf("Generating self-signed certificate for subdomain domain: %s", fullDomain)
+	logger.Debugf("Generating self-signed certificate for subdomain domain: %s", fullDomain)
 
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -694,8 +694,8 @@ func (c *Client) GenerateSubdomainSelfSignedCertificate(subdomain string) error 
 		return fmt.Errorf("setting key file permissions for subdomain %s: %w", subdomain, err)
 	}
 
-	log.Printf("Self-signed certificate for subdomain %s saved to %s", subdomain, certPath)
-	log.Printf("Private key for subdomain %s saved to %s", subdomain, keyPath)
+	logger.Debugf("Self-signed certificate for subdomain %s saved to %s", subdomain, certPath)
+	logger.Debugf("Private key for subdomain %s saved to %s", subdomain, keyPath)
 
 	return nil
 }
