@@ -60,6 +60,7 @@ type Tunnel struct {
 	ConnMutex   sync.RWMutex        // Protect connections map
 	HTTPURL     string              // Full HTTP URL for this tunnel
 	HTTPSURL    string              // Full HTTPS URL for this tunnel
+	Listener    net.Listener        // Track the listener for cleanup
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -113,6 +114,21 @@ func (s *Server) RemoveTunnel(subdomain string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	// Close the listener if it exists
+	if tunnel, exists := s.tunnels[subdomain]; exists {
+		if tunnel.Listener != nil {
+			tunnel.Listener.Close()
+		}
+		
+		// Close all active connections
+		tunnel.ConnMutex.Lock()
+		for connID, conn := range tunnel.Connections {
+			conn.Close()
+			delete(tunnel.Connections, connID)
+		}
+		tunnel.ConnMutex.Unlock()
+	}
+
 	delete(s.tunnels, subdomain)
 
 	// Also remove from proxy if available
@@ -156,6 +172,11 @@ func (s *Server) CleanupDisconnectedTunnels() {
 					delete(tunnel.Connections, connID)
 				}
 				tunnel.ConnMutex.Unlock()
+
+				// Close the listener to stop accepting new connections
+				if tunnel.Listener != nil {
+					tunnel.Listener.Close()
+				}
 
 				delete(s.tunnels, subdomain)
 				if s.tunnelManager != nil {
@@ -474,13 +495,16 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	tunnelTarget := fmt.Sprintf("localhost:%d", assignedPort)
 
 	// Start listening on the allocated port for incoming connections
-	go s.startRemoteForwardListener(assignedPort, conn)
+	listener := s.startRemoteForwardListener(assignedPort, conn)
 
 	// Register tunnel with proxy if available
 	if s.tunnelManager != nil {
 		err := s.tunnelManager.AddTunnel(subdomain, tunnelTarget)
 		if err != nil {
 			logger.Debugf("Failed to register tunnel: %v", err)
+			if listener != nil {
+				listener.Close()
+			}
 			return "", 0
 		}
 	}
@@ -492,6 +516,7 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		LocalPort:   assignedPort,
 		Channel:     channel,
 		Connections: make(map[string]net.Conn),
+		Listener:    listener,
 	}
 	s.mutex.Unlock()
 
@@ -555,11 +580,11 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 
 // startRemoteForwardListener starts listening on the allocated port and forwards
 // incoming connections through the SSH tunnel to the client
-func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
+func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) net.Listener {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		logger.Debugf("Failed to listen on port %d for remote forwarding: %v", port, err)
-		return
+		return nil
 	}
 
 	// Accept connections and forward them through SSH tunnel
@@ -578,11 +603,19 @@ func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) {
 			go s.forwardConnectionThroughSSH(conn, sshConn, port)
 		}
 	}()
+	
+	return listener
 }
 
 // forwardConnectionThroughSSH forwards a TCP connection through an SSH tunnel
 func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Conn, listeningPort int) {
 	defer localConn.Close()
+
+	// Check if sshConn is nil (can happen if connection closed while listener still running)
+	if sshConn == nil {
+		logger.Debugf("SSH connection is nil, cannot forward connection")
+		return
+	}
 
 	// Get originator address and port from the incoming connection
 	originAddr, originPortStr, _ := net.SplitHostPort(localConn.RemoteAddr().String())
