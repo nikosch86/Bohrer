@@ -1,0 +1,22 @@
+# Runtime stage with SSH tools
+FROM alpine:latest
+
+# Install SSH client and tools
+RUN apk add --no-cache \
+    openssh-client \
+    bash \
+    curl \
+    netcat-openbsd \
+    ca-certificates
+
+WORKDIR /app
+
+# Copy SSH key for authentication
+COPY test/ssh_key ./ssh_key
+RUN chmod 600 ssh_key
+
+# Create logs directory
+RUN mkdir -p /logs
+
+# Keep container running for exec commands
+CMD ["sleep", "infinity"]

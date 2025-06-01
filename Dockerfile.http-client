@@ -1,0 +1,12 @@
+FROM alpine:latest
+
+# Install HTTP testing tools
+RUN apk add --no-cache \
+    curl \
+    bash \
+    ca-certificates
+
+WORKDIR /app
+
+# Keep container running for exec commands
+CMD ["sleep", "infinity"]

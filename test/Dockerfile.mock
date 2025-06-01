@@ -1,0 +1,12 @@
+FROM golang:1.23-alpine
+
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+COPY cmd/sample-server/sample-http-server.go ./sample-http-server.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /sample-http-server sample-http-server.go
+
+EXPOSE 3000
+
+CMD ["/sample-http-server"]

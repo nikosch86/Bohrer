@@ -1,4 +1,5 @@
 services:
+  # Main SSH tunnel server
   ssh-server:
     build: .
     environment:
@@ -10,41 +11,56 @@ services:
     volumes:
       - e2e_data:/data
       - ./test/test_authorized_keys:/data/authorized_keys:ro
-    networks:
-      - e2e-net
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "22"]
       interval: 1s
       timeout: 1s
       retries: 5
 
-  e2e-client:
+  # Mock HTTP server for tunneling
+  mock-server:
     build:
-      context: .
-      dockerfile: Dockerfile.e2e-client
-    depends_on:
-      ssh-server:
-        condition: service_healthy
-    networks:
-      - e2e-net
-    volumes:
-      - e2e_logs:/logs
+      context: test/
+      dockerfile: Dockerfile.mock
     environment:
-      - SSH_HOST=ssh-server
-      - SSH_PORT=22
-      - SAMPLE_SERVER_HOST=localhost
-      - SAMPLE_SERVER_PORT=3000
+      - PORT=3000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 1s
       timeout: 1s
       retries: 5
-    command: ["./start-e2e-with-server.sh"]
+
+  # SSH client that creates tunnels
+  ssh-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.ssh-client
+    depends_on:
+      ssh-server:
+        condition: service_healthy
+      mock-server:
+        condition: service_healthy
+    environment:
+      - SSH_HOST=ssh-server
+      - SSH_PORT=22
+      - TARGET_HOST=mock-server
+      - TARGET_PORT=3000
+    volumes:
+      - tunnel_logs:/logs
+    command: ["sleep", "infinity"]
+
+  # Separate HTTP client for testing tunnel endpoints
+  http-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.http-client
+    depends_on:
+      ssh-server:
+        condition: service_healthy
+    volumes:
+      - tunnel_logs:/logs:ro
+    command: ["sleep", "infinity"]
 
 volumes:
   e2e_data:
-  e2e_logs:
-
-networks:
-  e2e-net:
-    driver: bridge
+  tunnel_logs:
