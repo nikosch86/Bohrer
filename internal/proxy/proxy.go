@@ -15,10 +15,16 @@ import (
 	"bohrer-go/internal/logger"
 )
 
+// WebUIHandler interface for serving the web interface
+type WebUIHandler interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 type Proxy struct {
 	config  *config.Config
 	tunnels map[string]string // subdomain -> target (host:port)
 	mutex   sync.RWMutex
+	webui   WebUIHandler
 }
 
 func NewProxy(cfg *config.Config) *Proxy {
@@ -52,9 +58,75 @@ func (p *Proxy) GetTunnel(subdomain string) (string, bool) {
 	return target, exists
 }
 
+// SetWebUI sets the WebUI handler for serving the web interface on root domain
+func (p *Proxy) SetWebUI(webui WebUIHandler) {
+	p.webui = webui
+}
+
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check for ACME challenge requests first
 	if p.handleACMEChallenge(w, r) {
+		return
+	}
+
+	// Check if this is a request to the root domain (no subdomain)
+	if p.isRootDomainRequest(r.Host) {
+		// Root domain on HTTP - return 404, WebUI only available via HTTPS
+		http.NotFound(w, r)
+		return
+	}
+
+	// Extract subdomain from host
+	subdomain, valid := extractSubdomain(r.Host, p.config.Domain)
+	if !valid {
+		http.Error(w, "Invalid domain", http.StatusBadRequest)
+		return
+	}
+
+	// Look up tunnel target
+	p.mutex.RLock()
+	target, exists := p.tunnels[subdomain]
+	p.mutex.RUnlock()
+
+	if !exists {
+		http.Error(w, "Tunnel not found for subdomain: "+subdomain, http.StatusNotFound)
+		return
+	}
+
+	// Create reverse proxy to target
+	targetURL, err := url.Parse("http://" + target)
+	if err != nil {
+		http.Error(w, "Invalid tunnel target", http.StatusInternalServerError)
+		return
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.ServeHTTP(w, r)
+}
+
+// ServeHTTPS handles HTTPS requests, including WebUI on root domain
+func (p *Proxy) ServeHTTPS(w http.ResponseWriter, r *http.Request) {
+	// Check for ACME challenge requests first (though unlikely on HTTPS)
+	if p.handleACMEChallenge(w, r) {
+		return
+	}
+
+	// Check if this is a request to the root domain (no subdomain)
+	if p.isRootDomainRequest(r.Host) {
+		// Serve WebUI if available
+		if p.webui != nil {
+			p.webui.ServeHTTP(w, r)
+			return
+		}
+		
+		// Fallback to simple message if no WebUI
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, `
+			<html><body>
+				<h1>SSH Tunnel Server</h1>
+				<p>Connect via SSH to create tunnels: <code>ssh -R 0:localhost:YOUR_PORT user@%s</code></p>
+			</body></html>
+		`, p.config.Domain)
 		return
 	}
 
@@ -111,10 +183,10 @@ func (p *Proxy) StartHTTPS() error {
 		Certificates: []tls.Certificate{cert},
 	}
 
-	// Create HTTPS server
+	// Create HTTPS server with separate handler
 	server := &http.Server{
 		Addr:      fmt.Sprintf(":%d", p.config.HTTPSPort),
-		Handler:   p,
+		Handler:   http.HandlerFunc(p.ServeHTTPS),
 		TLSConfig: tlsConfig,
 	}
 
@@ -134,6 +206,21 @@ func (p *Proxy) StartBoth() error {
 
 	// Start HTTPS server in main goroutine
 	return p.StartHTTPS()
+}
+
+// isRootDomainRequest checks if the request is to the root domain (no subdomain)
+func (p *Proxy) isRootDomainRequest(host string) bool {
+	if host == "" {
+		return false
+	}
+
+	// Remove port if present
+	if colonIndex := strings.Index(host, ":"); colonIndex != -1 {
+		host = host[:colonIndex]
+	}
+
+	// Check if host exactly matches domain (no subdomain)
+	return host == p.config.Domain
 }
 
 // extractSubdomain extracts the subdomain from a host given a base domain

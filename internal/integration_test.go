@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"bohrer-go/internal/config"
 	"bohrer-go/internal/proxy"
@@ -217,6 +218,10 @@ func TestTunnelLifecycleWithRealConnections(t *testing.T) {
 
 	// Run cleanup - should detect failed channel and remove tunnel
 	sshServer.CleanupDisconnectedTunnels()
+
+	// Give cleanup a moment to propagate to proxy
+	// This prevents race condition in test
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify tunnel was cleaned up from proxy
 	_, stillExists := proxyServer.GetTunnel(subdomain)

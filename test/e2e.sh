@@ -244,11 +244,158 @@ test_http_tunneling() {
     return 0
 }
 
+test_webui_http_404() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+    
+    # Test that WebUI returns 404 on HTTP (non-HTTPS)
+    exec_in_container $service curl -s -o /dev/null -w "%{http_code}" http://ssh-server/
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+    
+    if [ "$HTTP_STATUS" = "404" ]; then
+        return 0
+    else
+        echo "❌ WebUI returned unexpected status on HTTP: $HTTP_STATUS (expected 404)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_https_wrong_credentials() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+    
+    # Test with wrong credentials
+    exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" -u wronguser:wrongpass https://ssh-server/
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+    
+    if [ "$HTTP_STATUS" = "401" ]; then
+        return 0
+    else
+        echo "❌ WebUI returned unexpected status with wrong credentials: $HTTP_STATUS (expected 401)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_https_no_credentials() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+    
+    # Test without credentials
+    exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" https://ssh-server/
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+    
+    if [ "$HTTP_STATUS" = "401" ]; then
+        return 0
+    else
+        echo "❌ WebUI returned unexpected status without credentials: $HTTP_STATUS (expected 401)"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_https_correct_credentials() {
+    local service="http-client"
+    > "${LOG_DIR}/$service.log"
+    
+    # Get server logs and extract the WebUI credentials
+    docker compose -f "$COMPOSE_FILE" logs ssh-server > "${LOG_DIR}/server-startup.log" 2>&1
+    
+    # Parse username and password from the logs
+    WEBUI_USERNAME=$(grep -o "Username: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+    WEBUI_PASSWORD=$(grep -o "Password: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+    
+    if [ -z "$WEBUI_USERNAME" ] || [ -z "$WEBUI_PASSWORD" ]; then
+        echo "❌ Failed to parse WebUI credentials from server logs"
+        echo "Server logs:"
+        cat "${LOG_DIR}/server-startup.log"
+        return 1
+    fi
+    
+    # Test with correct credentials
+    exec_in_container $service curl -k -s -o /dev/null -w "%{http_code}" -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/
+    HTTP_STATUS=$(tail -n1 "${LOG_DIR}/$service.log")
+    
+    if [ "$HTTP_STATUS" = "200" ]; then
+        return 0
+    else
+        echo "❌ WebUI returned unexpected status with correct credentials: $HTTP_STATUS (expected 200)"
+        echo "Using credentials: username=$WEBUI_USERNAME"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+}
+
+test_webui_tunnel_display() {
+    local service="ssh-client"
+    > "${LOG_DIR}/$service.log"
+    
+    # Start SSH tunnel in background
+    exec_in_container $service bash -c "
+        ssh -i ./ssh_key -R 0:mock-server:3000 -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            tunnel@ssh-server -p 22 -vN &
+        echo \$! > /logs/ssh_pid
+    " &
+    
+    # Wait for tunnel to establish
+    sleep 3
+    
+    # Check if SSH process is still running
+    exec_in_container $service cat /logs/ssh_pid 2>/dev/null
+    SSH_PID=$(tail -n1 "${LOG_DIR}/$service.log")
+    
+    if [ -z "$SSH_PID" ] || ! exec_in_container $service kill -0 "$SSH_PID" 2>/dev/null; then
+        echo "❌ SSH tunnel failed to establish for WebUI test"
+        cat "${LOG_DIR}/$service.log"
+        return 1
+    fi
+    
+    # Get WebUI credentials
+    docker compose -f "$COMPOSE_FILE" logs ssh-server > "${LOG_DIR}/server-startup.log" 2>&1
+    WEBUI_USERNAME=$(grep -o "Username: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+    WEBUI_PASSWORD=$(grep -o "Password: [^ ]*" "${LOG_DIR}/server-startup.log" | tail -1 | cut -d' ' -f2)
+    
+    # Clear http-client logs
+    > "${LOG_DIR}/http-client.log"
+    
+    # Get WebUI dashboard and check for tunnel information
+    exec_in_container http-client curl -k -s -u "$WEBUI_USERNAME:$WEBUI_PASSWORD" https://ssh-server/
+    DASHBOARD_CONTENT=$(cat "${LOG_DIR}/http-client.log")
+    
+    # Check if dashboard contains tunnel information
+    # The WebUI shows the local port mapping (localhost:PORT), not the remote target
+    if echo "$DASHBOARD_CONTENT" | grep -q "Active Tunnels" && \
+       echo "$DASHBOARD_CONTENT" | grep -q "<td>localhost:[0-9]*</td>"; then
+        TUNNEL_DISPLAYED=true
+    else
+        echo "❌ WebUI does not show active tunnel information"
+        echo "Dashboard content:"
+        echo "$DASHBOARD_CONTENT"
+        TUNNEL_DISPLAYED=false
+    fi
+    
+    # Cleanup tunnel
+    exec_in_container $service kill "$SSH_PID" 2>/dev/null || true
+    
+    if [ "$TUNNEL_DISPLAYED" = true ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 
 run_test "Mock server responding from http-client" test_mock_server
 run_test "SSH server accepts connections" test_ssh_connection
 run_test "SSH Tunnel URL Parsing" test_ssh_tunnel_url_parsing
 run_test "E2E Integration" test_http_tunneling
+run_test "WebUI HTTP returns 404" test_webui_http_404
+run_test "WebUI HTTPS rejects wrong credentials" test_webui_https_wrong_credentials
+run_test "WebUI HTTPS rejects no credentials" test_webui_https_no_credentials
+run_test "WebUI HTTPS accepts correct credentials" test_webui_https_correct_credentials
+run_test "WebUI displays active tunnels" test_webui_tunnel_display
 
 
 

@@ -34,6 +34,12 @@ type CertificateManager interface {
 	CleanupSubdomainCertificate(subdomain string) error
 }
 
+// UserStore interface for SSH user authentication
+type UserStore interface {
+	GetUser(username string) (password string, exists bool)
+	VerifyPassword(username, password string) bool
+}
+
 type Server struct {
 	config             *config.Config
 	hostKey            ssh.Signer
@@ -43,6 +49,7 @@ type Server struct {
 	mutex              sync.RWMutex
 	tunnelManager      TunnelManager
 	certificateManager CertificateManager
+	userStore          UserStore
 }
 
 type Tunnel struct {
@@ -78,6 +85,10 @@ func (s *Server) SetTunnelManager(tm TunnelManager) {
 
 func (s *Server) SetCertificateManager(cm CertificateManager) {
 	s.certificateManager = cm
+}
+
+func (s *Server) SetUserStore(us UserStore) {
+	s.userStore = us
 }
 
 // GetActiveTunnelSubdomains implements the TunnelProvider interface for ACME client
@@ -167,9 +178,22 @@ func (s *Server) CleanupDisconnectedTunnels() {
 func (s *Server) Start() error {
 	sshConfig := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			// Use user store if available
+			if s.userStore != nil {
+				if s.userStore.VerifyPassword(c.User(), string(pass)) {
+					logger.Infof("User %s authenticated successfully", c.User())
+					return nil, nil
+				}
+				logger.Warnf("Authentication failed for user %s", c.User())
+				return nil, fmt.Errorf("password rejected for %q", c.User())
+			}
+			
+			// Fallback to hardcoded credentials if no user store
 			if c.User() == "tunnel" && string(pass) == "test123" {
+				logger.Infof("User %s authenticated with fallback credentials", c.User())
 				return nil, nil
 			}
+			logger.Warnf("Authentication failed for user %s (fallback)", c.User())
 			return nil, fmt.Errorf("password rejected for %q", c.User())
 		},
 		PublicKeyCallback: func(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {

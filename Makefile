@@ -1,4 +1,4 @@
-.PHONY: test test-verbose test-quick build clean deps dev-up dev-down coverage coverage-check e2e lint fmt security deadcode build-tools all ci validate help
+.PHONY: test test-verbose test-quick test-pkg test-run test-match test-webui test-ssh test-proxy test-acme test-config test-certs test-logger build clean deps dev-up dev-down coverage coverage-check e2e lint fmt security deadcode build-tools all ci validate help
 
 # Use bash instead of sh for better compatibility
 SHELL := /bin/bash
@@ -53,6 +53,66 @@ test:
 test-verbose:
 	@echo "🧪 Running verbose tests..."
 	$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -coverprofile=coverage.out ./...
+
+# Selective testing targets
+test-pkg:
+	@if [ -z "$(PKG)" ]; then \
+		echo "❌ Usage: make test-pkg PKG=<package>"; \
+		echo "   Example: make test-pkg PKG=./internal/webui"; \
+		echo "   Example: make test-pkg PKG=./internal/webui,./internal/ssh"; \
+		exit 1; \
+	fi
+	@echo "🧪 Running tests for package(s): $(PKG)..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) $(shell echo $(PKG) | tr ',' ' ')
+
+test-run:
+	@if [ -z "$(RUN)" ]; then \
+		echo "❌ Usage: make test-run RUN=<test_pattern> [PKG=<package>]"; \
+		echo "   Example: make test-run RUN=TestWebUIAuthentication"; \
+		echo "   Example: make test-run RUN=TestWebUI PKG=./internal/webui"; \
+		exit 1; \
+	fi
+	@echo "🧪 Running tests matching pattern: $(RUN) in $(if $(PKG),$(PKG),all packages)..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -run="$(RUN)" $(if $(PKG),$(PKG),./...)
+
+test-match:
+	@if [ -z "$(MATCH)" ]; then \
+		echo "❌ Usage: make test-match MATCH=<pattern> [PKG=<package>]"; \
+		echo "   Example: make test-match MATCH=Auth"; \
+		echo "   Example: make test-match MATCH=Integration PKG=./internal/webui"; \
+		exit 1; \
+	fi
+	@echo "🧪 Running tests containing pattern: $(MATCH) in $(if $(PKG),$(PKG),all packages)..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -run=".*$(MATCH).*" $(if $(PKG),$(PKG),./...)
+
+# Package-specific test shortcuts
+test-webui:
+	@echo "🌐 Running WebUI tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/webui
+
+test-ssh:
+	@echo "🔑 Running SSH tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/ssh
+
+test-proxy:
+	@echo "🌐 Running Proxy tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/proxy
+
+test-acme:
+	@echo "🔒 Running ACME tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/acme
+
+test-config:
+	@echo "⚙️  Running Config tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/config
+
+test-certs:
+	@echo "📜 Running Certificates tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/certs
+
+test-logger:
+	@echo "📝 Running Logger tests..."
+	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/logger
 
 coverage: test
 	@echo "📊 Generating coverage reports..."
@@ -147,6 +207,20 @@ help:
 	@echo "  coverage     - Generate and display detailed coverage reports"
 	@echo "  coverage-check - Check if coverage meets $(COVERAGE_THRESHOLD)% threshold"
 	@echo ""
+	@echo "🎯 Selective Testing:"
+	@echo "  test-pkg PKG=<path>     - Run tests for specific package(s)"
+	@echo "  test-run RUN=<pattern>  - Run tests matching specific function pattern"
+	@echo "  test-match MATCH=<text> - Run tests containing specific text"
+	@echo ""
+	@echo "📦 Package-Specific Tests:"
+	@echo "  test-webui   - Run WebUI tests (./internal/webui)"
+	@echo "  test-ssh     - Run SSH tests (./internal/ssh)"
+	@echo "  test-proxy   - Run Proxy tests (./internal/proxy)"
+	@echo "  test-acme    - Run ACME tests (./internal/acme)"
+	@echo "  test-config  - Run Config tests (./internal/config)"
+	@echo "  test-certs   - Run Certificates tests (./internal/certs)"
+	@echo "  test-logger  - Run Logger tests (./internal/logger)"
+	@echo ""
 	@echo "🔍 Code Quality:"
 	@echo "  lint         - Run Go linters (golangci-lint)"
 	@echo "  fmt          - Format Go code"
@@ -170,3 +244,12 @@ help:
 	@echo "  make test-quick    # Quick development testing"
 	@echo "  make validate      # Pre-commit validation"
 	@echo "  make e2e           # Full end-to-end testing"
+	@echo ""
+	@echo "🎯 Selective Testing Examples:"
+	@echo "  make test-webui                                    # Test WebUI package only"
+	@echo "  make test-pkg PKG=./internal/webui                # Same as test-webui"
+	@echo "  make test-pkg PKG='./internal/webui,./internal/ssh' # Test multiple packages"
+	@echo "  make test-run RUN=TestWebUIAuthentication          # Run specific test function"
+	@echo "  make test-run RUN=TestWebUI PKG=./internal/webui   # Run pattern in specific package"
+	@echo "  make test-match MATCH=Auth                         # Run tests containing 'Auth'"
+	@echo "  make test-match MATCH=Integration                  # Run integration tests only"

@@ -72,7 +72,7 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 ```
 ┌─────────────────┐    SSH Tunnel    ┌──────────────────┐    HTTP Proxy    ┌─────────────────┐
 │   Your Local   │ ────────────────▶ │  Bohrer Server   │ ────────────────▶ │   Internet      │
-│   Service       │                  │                  │                  │   Users         │
+│   Service       │                  │  + WebUI         │                  │   Users         │
 │   localhost:3000│ ◀──────────────── │  your-server.com │ ◀──────────────── │                 │
 └─────────────────┘                  └──────────────────┘                  └─────────────────┘
                                             │
@@ -85,6 +85,39 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 2. **Subdomain Generation**: Server creates a unique subdomain (e.g., `abc123.your-server.com`)
 3. **HTTP Proxy**: Server routes HTTP requests from the subdomain to your SSH tunnel
 4. **Secure Access**: Your local service becomes accessible via the public subdomain
+5. **WebUI Management**: Visit the root domain to manage tunnels and users
+
+## WebUI Management Interface
+
+The server includes a built-in web interface for managing tunnels and SSH users:
+
+### 🌐 Access the WebUI
+Visit your server's root domain in a browser:
+- **Development**: `https://localhost:8443` (uses self-signed certificate)
+- **Production**: `https://your-domain.com`
+
+**Note**: WebUI is only available via HTTPS on the root domain. HTTP requests to the root domain will return 404.
+
+### 📊 Dashboard Features
+- **Active Tunnels**: View all currently established SSH tunnels
+- **Tunnel Details**: See subdomain, target, status, and direct links
+- **Real-time Updates**: Dashboard shows live tunnel information
+
+### 👥 User Management
+- **Create SSH Users**: Add new username/password pairs for SSH authentication
+- **Delete Users**: Remove SSH users that are no longer needed
+- **View User List**: See all configured SSH users
+
+### 🔧 Usage Example
+```bash
+# 1. Visit WebUI at https://your-domain.com (login with generated credentials from logs)
+# 2. Go to "Manage Users" and create user "alice" with password "secret123"
+# 3. Connect via SSH with the new credentials:
+ssh -R 0:localhost:3000 alice@your-domain.com -p 2222
+# 4. View the new tunnel on the dashboard
+```
+
+The WebUI replaces the need for hardcoded SSH credentials and provides visual tunnel management.
 
 ## User Guide
 
@@ -112,10 +145,10 @@ ssh -f -N -R 0:localhost:3000 tunnel@your-server.com -p 2222
 
 The server supports both password and SSH key authentication:
 
-#### Password Authentication (Development)
-- **Username**: `tunnel`
-- **Password**: `test123`
-- **Usage**: Suitable for development and testing
+#### Password Authentication
+- **WebUI Management**: Create users via the web interface at your root domain
+- **Initial Access**: Use the auto-generated admin credentials shown in server logs, or set `WEBUI_USERNAME` and `WEBUI_PASSWORD` environment variables
+- **No Default Users**: There are no hardcoded SSH users - you must create them via WebUI or use SSH keys
 
 #### SSH Key Authentication (Production)
 For production deployments, use SSH key authentication:
@@ -208,6 +241,7 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DOMAIN` | `localhost` | Base domain for tunnel subdomains (e.g., subdomain.DOMAIN) |
+| `LOG_LEVEL` | `INFO` | Log level: DEBUG, INFO, WARN, ERROR, FATAL |
 
 #### SSL/ACME Certificate Configuration
 | Variable | Default | Description |
@@ -220,6 +254,7 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 | `ACME_KEY_PATH` | `/data/certs/key.pem` | Private key file path (inside container) |
 | `ACME_CHALLENGE_DIR` | `/data/acme-challenge` | HTTP-01 challenge directory |
 | `ACME_RENEWAL_DAYS` | `30` | Certificate renewal threshold (days before expiry) |
+| `SKIP_ACME` | `false` | Skip ACME entirely and use self-signed certificates |
 
 #### Port Configuration  
 | Variable | Default | Description |
@@ -235,6 +270,18 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SSH_AUTHORIZED_KEYS` | `/data/authorized_keys` | Path to SSH authorized keys file |
+
+#### User Storage Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USER_STORAGE_TYPE` | `file` | Storage backend: "file" (persistent) or "memory" (temporary) |
+| `USER_STORAGE_PATH` | `/data/users.json` | Path to user storage file (when using file backend) |
+
+#### WebUI Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBUI_USERNAME` | `admin` | WebUI admin username (empty = auto-generate) |
+| `WEBUI_PASSWORD` | _(auto-generated)_ | WebUI admin password (empty = auto-generate) |
 
 ### Certificate Configuration Scenarios
 
@@ -559,6 +606,8 @@ docker compose logs ssh-tunnel
 - ✅ SSH key authentication
 - ✅ Custom ACME server support (for internal PKI)
 - ✅ **Built-in ACME rate limiting** (protects against Let's Encrypt limits)
+- ✅ **WebUI management interface** (tunnel dashboard and user management)
+- ✅ **Password-based SSH authentication** (via WebUI user management)
 - ✅ Comprehensive configuration options
 
 ### Planned Features

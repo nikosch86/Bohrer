@@ -17,6 +17,10 @@ services:
       - HTTPS_EXTERNAL_PORT=${HTTPS_EXTERNAL_PORT:-8443}
       - ACME_STAGING=${ACME_STAGING:-true}
       - SSH_AUTHORIZED_KEYS=${SSH_AUTHORIZED_KEYS:-/data/authorized_keys}
+      - USER_STORAGE_TYPE=${USER_STORAGE_TYPE:-file}
+      - USER_STORAGE_PATH=${USER_STORAGE_PATH:-/data/users.json}
+      - WEBUI_USERNAME=${WEBUI_USERNAME:-}
+      - WEBUI_PASSWORD=${WEBUI_PASSWORD:-}
     volumes:
       - ssh_tunnel_data:/data
     restart: unless-stopped

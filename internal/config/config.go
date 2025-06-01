@@ -24,6 +24,10 @@ type Config struct {
 	SkipACME          bool  // Skip ACME entirely, use self-signed certificates
 	AuthorizedKeys    string
 	LogLevel          string // Log level: DEBUG, INFO, WARN, ERROR, FATAL
+	UserStorageType   string // User storage type: "memory" or "file"
+	UserStoragePath   string // Path to user storage file (used when UserStorageType is "file")
+	WebUIUsername     string // WebUI admin username (if empty, will be generated)
+	WebUIPassword     string // WebUI admin password (if empty, will be generated)
 }
 
 func Load() *Config {
@@ -46,6 +50,10 @@ func Load() *Config {
 		SkipACME:          getEnv("SKIP_ACME", "false") == "true",
 		AuthorizedKeys:    getEnv("SSH_AUTHORIZED_KEYS", "/data/authorized_keys"),
 		LogLevel:          getEnv("LOG_LEVEL", "INFO"),
+		UserStorageType:   getEnv("USER_STORAGE_TYPE", "file"),
+		UserStoragePath:   getEnv("USER_STORAGE_PATH", "/data/users.json"),
+		WebUIUsername:     getEnv("WEBUI_USERNAME", ""),
+		WebUIPassword:     getEnv("WEBUI_PASSWORD", ""),
 	}
 	
 	// If external ports are not set, use internal ports

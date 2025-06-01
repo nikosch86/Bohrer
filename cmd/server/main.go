@@ -10,6 +10,7 @@ import (
 	"bohrer-go/internal/logger"
 	"bohrer-go/internal/proxy"
 	"bohrer-go/internal/ssh"
+	"bohrer-go/internal/webui"
 )
 
 func main() {
@@ -27,6 +28,20 @@ func main() {
 	// Create SSH server and connect it to the proxy
 	sshServer := ssh.NewServer(cfg)
 	sshServer.SetTunnelManager(proxyServer)
+
+	// Create and configure WebUI for management interface
+	webUI := webui.NewWebUI(cfg)
+	
+	// Create adapter to connect SSH server and proxy with WebUI
+	sshAdapter := webui.NewSSHServerAdapter(sshServer, proxyServer)
+	webUI.SetSSHTunnelProvider(sshAdapter)
+	
+	// Connect WebUI user store to SSH server for authentication (via adapter)
+	userStoreAdapter := webui.NewUserStoreAdapter(webUI.GetUserStore())
+	sshServer.SetUserStore(userStoreAdapter)
+	
+	// Set WebUI in proxy to serve on root domain
+	proxyServer.SetWebUI(webUI)
 
 	// Create and configure ACME certificate manager
 	var certificateManager *acme.Client
@@ -158,6 +173,19 @@ func displayConfig(cfg *config.Config) {
 	if cfg.AuthorizedKeys != "" {
 		fmt.Printf("🔐 SSH Auth Keys:       %s\n", cfg.AuthorizedKeys)
 	}
+
+	// Show WebUI admin URL (HTTPS only)
+	webuiHTTPSPort := cfg.HTTPSExternalPort
+	if webuiHTTPSPort == 0 {
+		webuiHTTPSPort = cfg.HTTPSPort
+	}
+
+	// Show HTTPS WebUI URL only
+	webuiHTTPSURL := fmt.Sprintf("https://%s", cfg.Domain)
+	if webuiHTTPSPort != 443 {
+		webuiHTTPSURL = fmt.Sprintf("https://%s:%d", cfg.Domain, webuiHTTPSPort)
+	}
+	fmt.Printf("🔒 WebUI Admin (HTTPS): %s\n", webuiHTTPSURL)
 
 	fmt.Println("=====================================")
 	fmt.Println()
