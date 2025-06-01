@@ -203,6 +203,8 @@ func (w *WebUI) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/":
 		w.basicAuth(w.handleDashboard)(rw, r)
+	case r.URL.Path == "/api/tunnels":
+		w.basicAuth(w.handleAPITunnels)(rw, r)
 	case r.URL.Path == "/users":
 		w.basicAuth(w.handleUsers)(rw, r)
 	case strings.HasPrefix(r.URL.Path, "/users/") && r.Method == "DELETE":
@@ -221,6 +223,7 @@ func (w *WebUI) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 // RegisterRoutes registers the WebUI routes with an HTTP mux (alternative method)
 func (w *WebUI) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", w.basicAuth(w.handleDashboard))
+	mux.HandleFunc("/api/tunnels", w.basicAuth(w.handleAPITunnels))
 	mux.HandleFunc("/users", w.basicAuth(w.handleUsers))
 	mux.HandleFunc("/users/", w.basicAuth(w.handleDeleteUser))
 	mux.HandleFunc("/ssh-keys", w.basicAuth(w.handleSSHKeys))
@@ -242,6 +245,22 @@ func (w *WebUI) handleDashboard(rw http.ResponseWriter, r *http.Request) {
 
 	if err := w.templates.ExecuteTemplate(rw, "dashboard.html", data); err != nil {
 		logger.Errorf("Failed to render dashboard template: %v", err)
+		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+// handleAPITunnels returns tunnel information as JSON for AJAX updates
+func (w *WebUI) handleAPITunnels(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tunnels := w.getTunnels()
+	
+	rw.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(rw).Encode(tunnels); err != nil {
+		logger.Errorf("Failed to encode tunnels JSON: %v", err)
 		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
@@ -493,7 +512,8 @@ func (w *WebUI) loadTemplates() {
 
         <main>
             <section class="tunnels">
-                <h2>Active Tunnels</h2>
+                <h2>Active Tunnels <span id="refresh-indicator" class="refresh-indicator">⟳</span></h2>
+                <div id="tunnels-content">
                 {{if .Tunnels}}
                     <table>
                         <thead>
@@ -523,6 +543,7 @@ func (w *WebUI) loadTemplates() {
                 {{else}}
                     <p class="no-tunnels">No active tunnels</p>
                 {{end}}
+                </div>
             </section>
 
             <section class="info">
@@ -535,6 +556,93 @@ func (w *WebUI) loadTemplates() {
             </section>
         </main>
     </div>
+
+    <script>
+        let refreshInterval = null;
+        const refreshIndicator = document.getElementById('refresh-indicator');
+        
+        function updateTunnels() {
+            // Show refresh indicator
+            refreshIndicator.classList.add('spinning');
+            
+            fetch('/api/tunnels')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch tunnels');
+                    }
+                    return response.json();
+                })
+                .then(tunnels => {
+                    const contentDiv = document.getElementById('tunnels-content');
+                    
+                    if (tunnels && tunnels.length > 0) {
+                        let html = '<table><thead><tr><th>Subdomain</th><th>Target</th><th>Status</th><th>URLs</th></tr></thead><tbody>';
+                        
+                        tunnels.forEach(tunnel => {
+                            const statusClass = tunnel.Active ? 'active' : 'inactive';
+                            const statusText = tunnel.Active ? 'Active' : 'Inactive';
+                            
+                            html += '<tr>';
+                            html += '<td>' + escapeHtml(tunnel.Subdomain) + '</td>';
+                            html += '<td>' + escapeHtml(tunnel.Target) + '</td>';
+                            html += '<td class="status ' + statusClass + '">' + statusText + '</td>';
+                            html += '<td>';
+                            if (tunnel.HTTPURL) {
+                                html += '<a href="' + escapeHtml(tunnel.HTTPURL) + '" target="_blank">HTTP</a> ';
+                            }
+                            if (tunnel.HTTPSURL) {
+                                html += '<a href="' + escapeHtml(tunnel.HTTPSURL) + '" target="_blank">HTTPS</a>';
+                            }
+                            html += '</td>';
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                        contentDiv.innerHTML = html;
+                    } else {
+                        contentDiv.innerHTML = '<p class="no-tunnels">No active tunnels</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating tunnels:', error);
+                })
+                .finally(() => {
+                    // Hide refresh indicator
+                    refreshIndicator.classList.remove('spinning');
+                });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Start auto-refresh (every 5 seconds)
+        function startAutoRefresh() {
+            refreshInterval = setInterval(updateTunnels, 5000);
+        }
+        
+        // Stop auto-refresh when page is hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                }
+            } else {
+                startAutoRefresh();
+            }
+        });
+        
+        // Start auto-refresh when page loads
+        startAutoRefresh();
+        
+        // Manual refresh on indicator click
+        refreshIndicator.addEventListener('click', () => {
+            updateTunnels();
+        });
+    </script>
 </body>
 </html>
 `
@@ -912,6 +1020,31 @@ section h2 {
     color: #2c3e50;
     border-bottom: 2px solid #3498db;
     padding-bottom: 10px;
+    position: relative;
+}
+
+.refresh-indicator {
+    display: inline-block;
+    margin-left: 10px;
+    font-size: 20px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    vertical-align: middle;
+}
+
+.refresh-indicator:hover {
+    opacity: 1;
+}
+
+.refresh-indicator.spinning {
+    animation: spin 1s linear infinite;
+    opacity: 1;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 `
 }
