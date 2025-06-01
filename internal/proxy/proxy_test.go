@@ -691,3 +691,92 @@ func TestGetTunnel(t *testing.T) {
 		t.Errorf("Expected 'localhost:3000', got '%s'", target)
 	}
 }
+
+func TestStartHTTPS(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "proxy-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:        "test.com",
+		HTTPPort:      8080,
+		HTTPSPort:     0, // Use dynamic port for testing
+		ACMECertPath:  filepath.Join(tempDir, "cert.pem"),
+		ACMEKeyPath:   filepath.Join(tempDir, "key.pem"),
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test StartHTTPS without certificate files (should fail)
+	err = proxy.StartHTTPS()
+	if err == nil {
+		t.Error("Expected StartHTTPS to fail without certificate files")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestStartHTTPSWithInvalidCertificate(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "proxy-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	certPath := filepath.Join(tempDir, "cert.pem")
+	keyPath := filepath.Join(tempDir, "key.pem")
+
+	// Create invalid certificate files
+	err = os.WriteFile(certPath, []byte("invalid cert"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create invalid cert file: %v", err)
+	}
+	
+	err = os.WriteFile(keyPath, []byte("invalid key"), 0600)
+	if err != nil {
+		t.Fatalf("Failed to create invalid key file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Domain:        "test.com",
+		HTTPPort:      8080,
+		HTTPSPort:     0,
+		ACMECertPath:  certPath,
+		ACMEKeyPath:   keyPath,
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test StartHTTPS with invalid certificate files (should fail)
+	err = proxy.StartHTTPS()
+	if err == nil {
+		t.Error("Expected StartHTTPS to fail with invalid certificate files")
+	}
+}
+
+func TestStartBoth(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "proxy-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:        "test.com",
+		HTTPPort:      0,
+		HTTPSPort:     0,
+		ACMECertPath:  filepath.Join(tempDir, "nonexistent.pem"),
+		ACMEKeyPath:   filepath.Join(tempDir, "nonexistent.key"),
+	}
+
+	proxy := NewProxy(cfg)
+
+	// Test StartBoth without certificate files (should fall back to HTTPS error)
+	err = proxy.StartBoth()
+	if err == nil {
+		t.Error("Expected StartBoth to fail without certificate files")
+	}
+}

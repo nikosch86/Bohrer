@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
@@ -2600,5 +2601,93 @@ func TestHandleConnectionAcceptError(t *testing.T) {
 		t.Log("Accept error test completed")
 	case <-time.After(2 * time.Second):
 		t.Log("Accept error test completed with timeout")
+	}
+}
+
+// Mock certificate manager for testing
+type mockCertificateManager struct {
+	ensureSubdomainCalls []string
+	cleanupSubdomainCalls []string
+}
+
+func (m *mockCertificateManager) EnsureSubdomainCertificate(ctx context.Context, subdomain string) error {
+	m.ensureSubdomainCalls = append(m.ensureSubdomainCalls, subdomain)
+	return nil
+}
+
+func (m *mockCertificateManager) CleanupSubdomainCertificate(subdomain string) error {
+	m.cleanupSubdomainCalls = append(m.cleanupSubdomainCalls, subdomain)
+	return nil
+}
+
+func TestSetCertificateManager(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+	}
+	
+	server := NewServer(cfg)
+	
+	// Initially should be nil
+	if server.certificateManager != nil {
+		t.Error("Expected certificateManager to be nil initially")
+	}
+	
+	// Set certificate manager
+	mockCM := &mockCertificateManager{}
+	server.SetCertificateManager(mockCM)
+	
+	if server.certificateManager != mockCM {
+		t.Error("Expected certificateManager to be set")
+	}
+}
+
+func TestGetActiveTunnelSubdomains(t *testing.T) {
+	cfg := &config.Config{
+		Domain:    "test.com",
+		SSHPort:   2222,
+	}
+	
+	server := NewServer(cfg)
+	
+	// Initially should be empty
+	subdomains := server.GetActiveTunnelSubdomains()
+	if len(subdomains) != 0 {
+		t.Errorf("Expected 0 subdomains initially, got %d", len(subdomains))
+	}
+	
+	// Add some tunnels manually
+	server.mutex.Lock()
+	server.tunnels["test1"] = &Tunnel{
+		Subdomain: "test1",
+		LocalPort: 3000,
+	}
+	server.tunnels["test2"] = &Tunnel{
+		Subdomain: "test2", 
+		LocalPort: 3001,
+	}
+	server.tunnels["test3"] = &Tunnel{
+		Subdomain: "test3",
+		LocalPort: 3002,
+	}
+	server.mutex.Unlock()
+	
+	// Should return all subdomain names
+	subdomains = server.GetActiveTunnelSubdomains()
+	if len(subdomains) != 3 {
+		t.Errorf("Expected 3 subdomains, got %d", len(subdomains))
+	}
+	
+	// Verify all expected subdomains are present
+	expectedSubdomains := map[string]bool{"test1": true, "test2": true, "test3": true}
+	for _, subdomain := range subdomains {
+		if !expectedSubdomains[subdomain] {
+			t.Errorf("Unexpected subdomain: %s", subdomain)
+		}
+		delete(expectedSubdomains, subdomain)
+	}
+	
+	if len(expectedSubdomains) > 0 {
+		t.Errorf("Missing subdomains: %v", expectedSubdomains)
 	}
 }

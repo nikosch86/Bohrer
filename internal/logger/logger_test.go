@@ -141,11 +141,57 @@ func TestFormattedLogging(t *testing.T) {
 
 	SetLevel("DEBUG")
 
-	Debugf("formatted %s %d", "message", 42)
-	output := buf.String()
+	tests := []struct {
+		name     string
+		logFunc  func()
+		expected string
+	}{
+		{
+			name:     "Debugf",
+			logFunc:  func() { Debugf("formatted %s %d", "debug", 42) },
+			expected: "[DEBUG] formatted debug 42",
+		},
+		{
+			name:     "Infof",
+			logFunc:  func() { Infof("formatted %s %d", "info", 42) },
+			expected: "[INFO] formatted info 42",
+		},
+		{
+			name:     "Warnf",
+			logFunc:  func() { Warnf("formatted %s %d", "warn", 42) },
+			expected: "[WARN] formatted warn 42",
+		},
+		{
+			name:     "Errorf",
+			logFunc:  func() { Errorf("formatted %s %d", "error", 42) },
+			expected: "[ERROR] formatted error 42",
+		},
+	}
 
-	expected := "[DEBUG] formatted message 42"
-	if !strings.Contains(output, expected) {
-		t.Errorf("Expected log to contain %q, got %q", expected, output)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			buf.Reset()
+			test.logFunc()
+			output := buf.String()
+			if !strings.Contains(output, test.expected) {
+				t.Errorf("Expected log to contain %q, got %q", test.expected, output)
+			}
+		})
 	}
 }
+
+func TestGetLevel(t *testing.T) {
+	// Test getting current level
+	SetLevel("WARN")
+	if GetLevel() != WARN {
+		t.Errorf("GetLevel(): expected %v, got %v", WARN, GetLevel())
+	}
+
+	SetLevel("DEBUG")
+	if GetLevel() != DEBUG {
+		t.Errorf("GetLevel(): expected %v, got %v", DEBUG, GetLevel())
+	}
+}
+
+// Note: Testing Fatal/Fatalf is complex since they call os.Exit(1)
+// The functions are tested indirectly through integration tests

@@ -146,3 +146,129 @@ func TestGenerateWildcardCertificateErrorPaths(t *testing.T) {
 		t.Error("Expected error when trying to write to invalid directory path")
 	}
 }
+
+func TestGenerateSelfSignedCertificateErrorPaths(t *testing.T) {
+	// Test with invalid directory path
+	cfg := &config.Config{
+		Domain:       "example.com",
+		ACMECertPath: "/dev/null/cert.pem",
+		ACMEKeyPath:  "/dev/null/key.pem",
+	}
+
+	domains := []string{"localhost"}
+	err := GenerateSelfSignedCertificate(cfg, domains)
+	if err == nil {
+		t.Error("Expected error when trying to write to invalid directory path")
+	}
+}
+
+func TestPermissionErrors(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cert-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a file where we want a directory
+	invalidDir := filepath.Join(tempDir, "not-a-dir")
+	err = os.WriteFile(invalidDir, []byte("test"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cfg := &config.Config{
+		Domain:       "test.local", 
+		ACMECertPath: filepath.Join(invalidDir, "cert.pem"), // This should fail
+		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
+	}
+
+	err = GenerateWildcardCertificate(cfg)
+	if err == nil {
+		t.Error("Expected error when certificate directory creation fails")
+	}
+}
+
+func TestGenerateWildcardCertificateFilePermissionErrors(t *testing.T) {
+	// Test with invalid path that will definitely fail
+	cfg := &config.Config{
+		Domain:       "test.local",
+		ACMECertPath: "/proc/invalid/cert.pem", // This path should fail
+		ACMEKeyPath:  "/proc/invalid/key.pem",
+	}
+
+	err := GenerateWildcardCertificate(cfg)
+	if err == nil {
+		t.Error("Expected error when writing to invalid path")
+	}
+}
+
+func TestGenerateSelfSignedCertificateFilePermissionErrors(t *testing.T) {
+	// Test with invalid path that will definitely fail
+	cfg := &config.Config{
+		Domain:       "example.com",
+		ACMECertPath: "/proc/invalid/cert.pem", // This path should fail
+		ACMEKeyPath:  "/proc/invalid/key.pem",
+	}
+
+	domains := []string{"localhost"}
+	err := GenerateSelfSignedCertificate(cfg, domains)
+	if err == nil {
+		t.Error("Expected error when writing to invalid path")
+	}
+}
+
+func TestGenerateWildcardCertificateKeyFileErrors(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cert-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a scenario where cert directory exists but key directory is invalid
+	certPath := filepath.Join(tempDir, "cert.pem")
+	keyPath := "/proc/invalid/key.pem" // This will cause key file creation to fail
+
+	cfg := &config.Config{
+		Domain:       "test.local",
+		ACMECertPath: certPath,
+		ACMEKeyPath:  keyPath,
+	}
+
+	err = GenerateWildcardCertificate(cfg)
+	if err == nil {
+		t.Error("Expected error when key file creation fails")
+	}
+}
+
+func TestGenerateSelfSignedCertificateWithIPAddresses(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cert-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:       "example.com",
+		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
+		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
+	}
+
+	// Test with IP addresses to ensure IP parsing code is covered
+	domains := []string{"localhost", "127.0.0.1", "::1", "192.168.1.1"}
+	err = GenerateSelfSignedCertificate(cfg, domains)
+	if err != nil {
+		t.Fatalf("Failed to generate certificate with IP addresses: %v", err)
+	}
+
+	// Verify certificate was created
+	_, err = os.Stat(cfg.ACMECertPath)
+	if err != nil {
+		t.Errorf("Certificate file was not created: %v", err)
+	}
+
+	// Verify key was created
+	_, err = os.Stat(cfg.ACMEKeyPath)
+	if err != nil {
+		t.Errorf("Key file was not created: %v", err)
+	}
+}
