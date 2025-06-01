@@ -303,7 +303,12 @@ func (w *WebUI) createUser(rw http.ResponseWriter, r *http.Request) {
 
 	if err := w.userStore.CreateUser(username, password); err != nil {
 		logger.Errorf("Failed to create user %s: %v", username, err)
-		http.Error(rw, "Failed to create user", http.StatusInternalServerError)
+		// Return specific error message to the user
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(rw, fmt.Sprintf("User %s already exists", username), http.StatusConflict)
+		} else {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -693,6 +698,11 @@ func (s *InMemoryUserStore) CreateUser(username, password string) error {
 
 	if username == "" || password == "" {
 		return fmt.Errorf("username and password cannot be empty")
+	}
+
+	// Check if user already exists
+	if _, exists := s.users[username]; exists {
+		return fmt.Errorf("user %s already exists", username)
 	}
 
 	s.users[username] = password
