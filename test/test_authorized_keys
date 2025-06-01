@@ -1,4 +1,0 @@
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7vbqajDjnWBWc6S0OGcQs user1@example.com
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK1+DWu515KcpVlp8/FpUgJqjKxQe8qpqS1QqvSpA6CJ user2@example.com
-# This is a comment
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD3F5P2gVzqBjM7S8s9VcYs user3@example.com

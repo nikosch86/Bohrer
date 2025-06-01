@@ -16,7 +16,11 @@
 coverage.html
 ssh_coverage.html
 
-# Test files (none currently ignored - test keys are safe dummy data)
+# Test files
+test/ssh_key
+test/ssh_key.pub
+test/test_authorized_keys
+test/logs/
 
 # Go workspace file
 go.work

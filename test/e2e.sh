@@ -12,11 +12,21 @@ LOG_DIR="test/logs"
 cleanup() {
     echo "🧹 Cleaning up..."
     docker compose -f "$COMPOSE_FILE" down -v
-    rm -r "$LOG_DIR"
+    rm -rf "$LOG_DIR"
+    # Clean up generated SSH keys
+    rm -f test/ssh_key test/ssh_key.pub test/test_authorized_keys
 }
 trap cleanup EXIT
 
 mkdir -p "$LOG_DIR"
+
+# Generate SSH keys for testing
+echo "🔑 Setting up SSH keys for testing..."
+if [ ! -f "test/ssh_key" ]; then
+    ./test/generate-ssh-keys.sh
+else
+    echo "✅ SSH keys already exist"
+fi
 
 # Test Results Tracking
 TESTS_PASSED=0

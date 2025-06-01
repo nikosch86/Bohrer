@@ -429,7 +429,7 @@ your-domain.com.     IN  A  YOUR_SERVER_IP
 # Unit tests with coverage
 make test
 
-# End-to-end tests
+# End-to-end tests (automatically generates SSH keys)
 make e2e
 
 # Start development environment
@@ -438,6 +438,8 @@ make dev-up
 # View logs
 docker compose logs ssh-tunnel
 ```
+
+**Note**: End-to-end tests automatically generate temporary SSH keys for testing and clean them up afterward. No credentials are stored in the repository.
 
 ### Project Structure
 ```
