@@ -579,6 +579,96 @@ func (c *Client) CleanupSubdomainCertificate(subdomain string) error {
 	return nil
 }
 
+// StartPeriodicRenewal starts a background goroutine that periodically checks and renews certificates
+func (c *Client) StartPeriodicRenewal(ctx context.Context) {
+	// Check certificates every 24 hours
+	ticker := time.NewTicker(24 * time.Hour)
+	
+	go func() {
+		defer ticker.Stop()
+		
+		logger.Infof("Starting periodic certificate renewal checker (every 24 hours)")
+		
+		// Do an initial check after 1 minute to allow system to fully start
+		time.Sleep(1 * time.Minute)
+		c.checkAndRenewCertificates(ctx)
+		
+		for {
+			select {
+			case <-ctx.Done():
+				logger.Debugf("Certificate renewal checker stopping due to context cancellation")
+				return
+			case <-ticker.C:
+				c.checkAndRenewCertificates(ctx)
+			}
+		}
+	}()
+}
+
+// checkAndRenewCertificates checks all active tunnel certificates and renews them if needed
+func (c *Client) checkAndRenewCertificates(ctx context.Context) {
+	logger.Debugf("Running periodic certificate renewal check")
+	
+	if c.tunnelProvider == nil {
+		logger.Debugf("No tunnel provider set, skipping certificate renewal check")
+		return
+	}
+	
+	// Get active tunnel subdomains
+	subdomains := c.tunnelProvider.GetActiveTunnelSubdomains()
+	if len(subdomains) == 0 {
+		logger.Debugf("No active tunnels, no certificates to check for renewal")
+		return
+	}
+	
+	logger.Debugf("Checking certificates for renewal: %v", subdomains)
+	renewalCount := 0
+	
+	// Check each subdomain certificate
+	for _, subdomain := range subdomains {
+		fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
+		
+		// Skip invalid domains
+		if !c.IsValidDomain(fullDomain) {
+			continue
+		}
+		
+		// Check if certificate is valid
+		valid, err := c.CheckSubdomainCertificate(subdomain)
+		if err != nil {
+			logger.Warnf("Error checking certificate for subdomain %s: %v", subdomain, err)
+			continue
+		}
+		
+		if !valid {
+			logger.Infof("Certificate for subdomain %s needs renewal", subdomain)
+			
+			if c.IsLocalDomain(fullDomain) {
+				// Renew self-signed certificate for local domains
+				if err := c.GenerateSubdomainSelfSignedCertificate(subdomain); err != nil {
+					logger.Errorf("Failed to renew self-signed certificate for subdomain %s: %v", subdomain, err)
+					continue
+				}
+				logger.Infof("✅ Renewed self-signed certificate for subdomain %s", subdomain)
+			} else {
+				// Renew ACME certificate for public domains
+				if err := c.ObtainSubdomainCertificate(ctx, subdomain); err != nil {
+					logger.Errorf("Failed to renew ACME certificate for subdomain %s: %v", subdomain, err)
+					continue
+				}
+				logger.Infof("✅ Renewed ACME certificate for subdomain %s", subdomain)
+			}
+			renewalCount++
+		}
+	}
+	
+	if renewalCount > 0 {
+		logger.Infof("✅ Certificate renewal check completed: %d certificates renewed", renewalCount)
+	} else {
+		logger.Debugf("Certificate renewal check completed: no certificates needed renewal")
+	}
+}
+
 // EnsureSubdomainCertificate ensures a valid certificate exists for a specific subdomain
 func (c *Client) EnsureSubdomainCertificate(ctx context.Context, subdomain string) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)

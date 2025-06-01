@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"bohrer-go/internal/acme"
 	"bohrer-go/internal/certs"
@@ -18,6 +21,14 @@ func main() {
 
 	// Initialize logger with config
 	logger.SetLevel(cfg.LogLevel)
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Display startup configuration
 	displayConfig(cfg)
@@ -40,6 +51,9 @@ func main() {
 	userStoreAdapter := webui.NewUserStoreAdapter(webUI.GetUserStore())
 	sshServer.SetUserStore(userStoreAdapter)
 	
+	// Connect WebUI SSH key store to SSH server for public key authentication
+	sshServer.SetSSHKeyStore(webUI.GetSSHKeyStore())
+	
 	// Set WebUI in proxy to serve on root domain
 	proxyServer.SetWebUI(webUI)
 
@@ -60,6 +74,10 @@ func main() {
 			certificateManager.SetTunnelProvider(sshServer)
 			// Set certificate manager in SSH server for automatic cert generation
 			sshServer.SetCertificateManager(certificateManager)
+
+			// Start periodic certificate renewal process
+			certificateManager.StartPeriodicRenewal(ctx)
+			logger.Infof("✅ Automatic certificate renewal enabled")
 
 			// Check certificate strategy based on domain type and configuration
 			if client.IsLocalDomain(cfg.Domain) {
@@ -113,20 +131,39 @@ func main() {
 		logger.Debugf("Certificate file found, enabling HTTPS on port %d", cfg.HTTPSPort)
 	}
 
-	if startHTTPS {
-		if err := proxyServer.StartBoth(); err != nil {
-			logger.Warnf("HTTPS server failed (falling back to HTTP only): %v", err)
-			// Fall back to HTTP only if HTTPS fails
+	// Start proxy server in background
+	go func() {
+		if startHTTPS {
+			if err := proxyServer.StartBoth(); err != nil {
+				logger.Warnf("HTTPS server failed (falling back to HTTP only): %v", err)
+				// Fall back to HTTP only if HTTPS fails
+				if err := proxyServer.Start(); err != nil {
+					logger.Errorf("HTTP proxy server failed: %v", err)
+					cancel() // Signal shutdown
+				}
+			}
+		} else {
+			// Start HTTP only
 			if err := proxyServer.Start(); err != nil {
-				logger.Fatalf("HTTP proxy server failed: %v", err)
+				logger.Errorf("HTTP proxy server failed: %v", err)
+				cancel() // Signal shutdown
 			}
 		}
-	} else {
-		// Start HTTP only
-		if err := proxyServer.Start(); err != nil {
-			logger.Fatalf("HTTP proxy server failed: %v", err)
-		}
+	}()
+
+	// Wait for shutdown signal
+	logger.Infof("🚀 Server started successfully. Press Ctrl+C to stop...")
+	select {
+	case sig := <-sigChan:
+		logger.Infof("Received signal %v, shutting down gracefully...", sig)
+	case <-ctx.Done():
+		logger.Infof("Context cancelled, shutting down...")
 	}
+
+	// Graceful shutdown
+	logger.Infof("Shutting down servers...")
+	cancel() // Cancel the context to stop all background processes
+	logger.Infof("✅ Server shutdown complete")
 }
 
 func displayConfig(cfg *config.Config) {

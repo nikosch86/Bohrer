@@ -40,6 +40,11 @@ type UserStore interface {
 	VerifyPassword(username, password string) bool
 }
 
+// SSHKeyStore interface for managing SSH public keys (simple interface for SSH authentication)
+type SSHKeyStore interface {
+	GetAuthorizedKeysContent() string
+}
+
 type Server struct {
 	config             *config.Config
 	hostKey            ssh.Signer
@@ -50,6 +55,7 @@ type Server struct {
 	tunnelManager      TunnelManager
 	certificateManager CertificateManager
 	userStore          UserStore
+	sshKeyStore        SSHKeyStore
 }
 
 type Tunnel struct {
@@ -90,6 +96,10 @@ func (s *Server) SetCertificateManager(cm CertificateManager) {
 
 func (s *Server) SetUserStore(us UserStore) {
 	s.userStore = us
+}
+
+func (s *Server) SetSSHKeyStore(sks SSHKeyStore) {
+	s.sshKeyStore = sks
 }
 
 // GetActiveTunnelSubdomains implements the TunnelProvider interface for ACME client
@@ -403,6 +413,23 @@ func (s *Server) authenticatePublicKey(c ssh.ConnMetadata, pubKey ssh.PublicKey)
 		return nil, fmt.Errorf("user %q not allowed", c.User())
 	}
 
+	// Try SSH key store first (preferred method)
+	if s.sshKeyStore != nil {
+		// Try key store authentication
+		perms, err := s.authenticateWithKeyStore(c, pubKey)
+		if err == nil {
+			return perms, nil
+		}
+		// If key store has no keys, fall back to file-based auth
+		if err.Error() == "no SSH keys configured" {
+			logger.Debugf("No keys in SSH key store, falling back to file-based authentication")
+		} else {
+			// For other errors, still try file-based as fallback
+			logger.Debugf("SSH key store authentication failed: %v, trying file-based authentication", err)
+		}
+	}
+
+	// Fallback to file-based authentication
 	authorizedKeys, err := s.loadAuthorizedKeys()
 	if err != nil {
 		logger.Debugf("Failed to load authorized keys: %v", err)
@@ -431,6 +458,44 @@ func (s *Server) authenticatePublicKey(c ssh.ConnMetadata, pubKey ssh.PublicKey)
 		}
 	}
 
+	return nil, fmt.Errorf("public key not authorized for %q", c.User())
+}
+
+// authenticateWithKeyStore authenticates using the SSH key store
+func (s *Server) authenticateWithKeyStore(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+	authorizedKeysContent := s.sshKeyStore.GetAuthorizedKeysContent()
+	if authorizedKeysContent == "" {
+		logger.Debugf("No SSH keys configured in key store")
+		return nil, fmt.Errorf("no SSH keys configured")
+	}
+
+	// Split the content into individual keys
+	authorizedKeys := strings.Split(authorizedKeysContent, "\n")
+	clientKeyBytes := ssh.MarshalAuthorizedKey(pubKey)
+	
+	for _, authorizedKey := range authorizedKeys {
+		authorizedKey = strings.TrimSpace(authorizedKey)
+		if authorizedKey == "" || strings.HasPrefix(authorizedKey, "#") {
+			continue // Skip empty lines and comments
+		}
+
+		// Parse the authorized key to compare properly
+		parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedKey))
+		if err != nil {
+			logger.Debugf("Invalid SSH key in store: %v", err)
+			continue // Skip invalid keys
+		}
+
+		// Compare the marshalled representations of the keys
+		authorizedKeyBytes := ssh.MarshalAuthorizedKey(parsedKey)
+
+		if strings.TrimSpace(string(clientKeyBytes)) == strings.TrimSpace(string(authorizedKeyBytes)) {
+			logger.Infof("Public key authentication successful for user %s using SSH key store", c.User())
+			return nil, nil
+		}
+	}
+
+	logger.Debugf("Public key not found in SSH key store for user %s", c.User())
 	return nil, fmt.Errorf("public key not authorized for %q", c.User())
 }
 

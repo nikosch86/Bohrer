@@ -2301,3 +2301,192 @@ func setupTestHTTPClient() *http.Client {
 		Timeout:   3 * time.Second,
 	}
 }
+
+func TestPeriodicRenewalProcess(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cert-renewal-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "localhost",
+		ACMEEmail:        "test@example.com",
+		ACMEStaging:      true,
+		ACMECertPath:     filepath.Join(tempDir, "cert.pem"),
+		ACMEKeyPath:      filepath.Join(tempDir, "key.pem"),
+		ACMEChallengeDir: filepath.Join(tempDir, "acme-challenge"),
+		ACMERenewalDays:  30,
+		ACMEForceLocal:   false,
+	}
+
+	client := &Client{config: cfg}
+	
+	// Mock tunnel provider with some active tunnels
+	mockProvider := &MockTunnelProvider{
+		subdomains: []string{"tunnel1", "tunnel2"},
+	}
+	client.SetTunnelProvider(mockProvider)
+
+	// Create short-lived context for testing
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Test checkAndRenewCertificates directly (unit test)
+	client.checkAndRenewCertificates(ctx)
+
+	// Verify that certificates were created for both tunnels
+	for _, subdomain := range []string{"tunnel1", "tunnel2"} {
+		certPath := client.getSubdomainCertPath(subdomain)
+		keyPath := client.getSubdomainKeyPath(subdomain)
+
+		if _, err := os.Stat(certPath); os.IsNotExist(err) {
+			t.Errorf("Expected certificate file for %s to be created during renewal check", subdomain)
+		}
+
+		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+			t.Errorf("Expected key file for %s to be created during renewal check", subdomain)
+		}
+	}
+}
+
+func TestPeriodicRenewalWithExpiringCertificates(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cert-renewal-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	cfg := &config.Config{
+		Domain:           "localhost",
+		ACMEEmail:        "test@example.com",
+		ACMEStaging:      true,
+		ACMECertPath:     filepath.Join(tempDir, "cert.pem"),
+		ACMEKeyPath:      filepath.Join(tempDir, "key.pem"),
+		ACMEChallengeDir: filepath.Join(tempDir, "acme-challenge"),
+		ACMERenewalDays:  60, // Will consider any cert expiring within 60 days as needing renewal
+		ACMEForceLocal:   false,
+	}
+
+	client := &Client{config: cfg}
+	
+	// Mock tunnel provider
+	mockProvider := &MockTunnelProvider{
+		subdomains: []string{"expiring-tunnel"},
+	}
+	client.SetTunnelProvider(mockProvider)
+
+	// Create a certificate that expires in 30 days (within renewal threshold)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(30 * 24 * time.Hour), // 30 days from now
+		DNSNames:     []string{"expiring-tunnel.localhost"},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("Failed to create test certificate: %v", err)
+	}
+
+	// Write expiring certificate to subdomain-specific file
+	certPath := client.getSubdomainCertPath("expiring-tunnel")
+	err = os.MkdirAll(filepath.Dir(certPath), 0755)
+	if err != nil {
+		t.Fatalf("Failed to create cert directory: %v", err)
+	}
+
+	certFile, err := os.Create(certPath)
+	if err != nil {
+		t.Fatalf("Failed to create cert file: %v", err)
+	}
+
+	err = pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	certFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to encode certificate: %v", err)
+	}
+
+	// Get the original cert modification time
+	origStat, err := os.Stat(certPath)
+	if err != nil {
+		t.Fatalf("Failed to stat original cert: %v", err)
+	}
+	origModTime := origStat.ModTime()
+
+	// Wait a bit to ensure new certificate will have different timestamp
+	time.Sleep(10 * time.Millisecond)
+
+	// Run renewal check
+	ctx := context.Background()
+	client.checkAndRenewCertificates(ctx)
+
+	// Verify certificate was renewed (file should have new modification time)
+	newStat, err := os.Stat(certPath)
+	if err != nil {
+		t.Fatalf("Failed to stat renewed cert: %v", err)
+	}
+	newModTime := newStat.ModTime()
+
+	if !newModTime.After(origModTime) {
+		t.Error("Expected certificate to be renewed (have newer modification time)")
+	}
+}
+
+func TestPeriodicRenewalWithNoProvider(t *testing.T) {
+	cfg := &config.Config{
+		Domain: "example.com",
+	}
+
+	client := &Client{config: cfg}
+	// No tunnel provider set
+
+	ctx := context.Background()
+	// Should handle gracefully
+	client.checkAndRenewCertificates(ctx)
+
+	// Test passes if no panic occurs
+}
+
+func TestPeriodicRenewalWithNoTunnels(t *testing.T) {
+	cfg := &config.Config{
+		Domain: "example.com",
+	}
+
+	client := &Client{config: cfg}
+	mockProvider := &MockTunnelProvider{
+		subdomains: []string{}, // No active tunnels
+	}
+	client.SetTunnelProvider(mockProvider)
+
+	ctx := context.Background()
+	client.checkAndRenewCertificates(ctx)
+
+	// Test passes if no panic occurs
+}
+
+func TestStartPeriodicRenewalCancellation(t *testing.T) {
+	cfg := &config.Config{
+		Domain: "localhost",
+	}
+
+	client := &Client{config: cfg}
+
+	// Create context that cancels quickly
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// Start renewal process
+	client.StartPeriodicRenewal(ctx)
+
+	// Wait for context to cancel
+	<-ctx.Done()
+
+	// Test passes if renewal process shuts down gracefully
+	time.Sleep(10 * time.Millisecond) // Give it time to clean up
+}

@@ -56,6 +56,7 @@ type WebUI struct {
 	tunnelProvider     TunnelProvider
 	sshTunnelProvider  SSHTunnelProvider
 	userStore          UserStore
+	sshKeyStore        SSHKeyStore
 	templates          *template.Template
 	adminUsername      string
 	adminPassword      string
@@ -80,6 +81,18 @@ func NewWebUI(cfg *config.Config) *WebUI {
 		userStore = NewInMemoryUserStore()
 	} else {
 		logger.Debugf("Successfully created user store: type=%s, path=%s", cfg.UserStorageType, cfg.UserStoragePath)
+	}
+
+	// Initialize SSH key store
+	sshKeyStorePath := filepath.Join(filepath.Dir(cfg.UserStoragePath), "ssh_keys.json")
+	logger.Debugf("Initializing SSH key store: type=%s, path=%s", cfg.UserStorageType, sshKeyStorePath)
+	sshKeyStore, err := NewSSHKeyStore(cfg.UserStorageType, sshKeyStorePath)
+	if err != nil {
+		logger.Errorf("Failed to create SSH key store (type=%s, path=%s): %v", cfg.UserStorageType, sshKeyStorePath, err)
+		logger.Infof("Falling back to in-memory SSH key store")
+		sshKeyStore = NewInMemorySSHKeyStore()
+	} else {
+		logger.Debugf("Successfully created SSH key store: type=%s, path=%s", cfg.UserStorageType, sshKeyStorePath)
 	}
 
 	// Setup WebUI admin credentials
@@ -110,6 +123,7 @@ func NewWebUI(cfg *config.Config) *WebUI {
 	webui := &WebUI{
 		config:        cfg,
 		userStore:     userStore,
+		sshKeyStore:   sshKeyStore,
 		adminUsername: adminUsername,
 		adminPassword: adminPassword,
 	}
@@ -131,6 +145,11 @@ func (w *WebUI) SetSSHTunnelProvider(stp SSHTunnelProvider) {
 // GetUserStore returns the user store for SSH authentication integration
 func (w *WebUI) GetUserStore() UserStore {
 	return w.userStore
+}
+
+// GetSSHKeyStore returns the SSH key store for SSH authentication integration
+func (w *WebUI) GetSSHKeyStore() SSHKeyStore {
+	return w.sshKeyStore
 }
 
 // basicAuth implements HTTP Basic Authentication
@@ -188,6 +207,10 @@ func (w *WebUI) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		w.basicAuth(w.handleUsers)(rw, r)
 	case strings.HasPrefix(r.URL.Path, "/users/") && r.Method == "DELETE":
 		w.basicAuth(w.handleDeleteUser)(rw, r)
+	case r.URL.Path == "/ssh-keys":
+		w.basicAuth(w.handleSSHKeys)(rw, r)
+	case strings.HasPrefix(r.URL.Path, "/ssh-keys/") && r.Method == "DELETE":
+		w.basicAuth(w.handleDeleteSSHKey)(rw, r)
 	case strings.HasPrefix(r.URL.Path, "/static/"):
 		w.basicAuth(w.handleStatic)(rw, r)
 	default:
@@ -200,6 +223,8 @@ func (w *WebUI) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", w.basicAuth(w.handleDashboard))
 	mux.HandleFunc("/users", w.basicAuth(w.handleUsers))
 	mux.HandleFunc("/users/", w.basicAuth(w.handleDeleteUser))
+	mux.HandleFunc("/ssh-keys", w.basicAuth(w.handleSSHKeys))
+	mux.HandleFunc("/ssh-keys/", w.basicAuth(w.handleDeleteSSHKey))
 	mux.HandleFunc("/static/", w.basicAuth(w.handleStatic))
 }
 
@@ -318,6 +343,92 @@ func (w *WebUI) createUser(rw http.ResponseWriter, r *http.Request) {
 	http.Redirect(rw, r, "/users", http.StatusSeeOther)
 }
 
+// handleSSHKeys handles SSH key management page and key creation
+func (w *WebUI) handleSSHKeys(rw http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		w.showSSHKeysPage(rw, r)
+	case "POST":
+		w.createSSHKey(rw, r)
+	default:
+		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleDeleteSSHKey handles SSH key deletion
+func (w *WebUI) handleDeleteSSHKey(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	keyName := path.Base(r.URL.Path)
+	if keyName == "" || keyName == "ssh-keys" {
+		http.Error(rw, "Key name required", http.StatusBadRequest)
+		return
+	}
+
+	if err := w.sshKeyStore.DeleteKey(keyName); err != nil {
+		logger.Errorf("Failed to delete SSH key %s: %v", keyName, err)
+		http.Error(rw, "Failed to delete SSH key", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Infof("SSH key %s deleted", keyName)
+	rw.WriteHeader(http.StatusOK)
+}
+
+// showSSHKeysPage displays the SSH key management page
+func (w *WebUI) showSSHKeysPage(rw http.ResponseWriter, r *http.Request) {
+	keys := w.sshKeyStore.GetAllKeys()
+
+	data := struct {
+		Domain string
+		Keys   []SSHKeyData
+	}{
+		Domain: w.config.Domain,
+		Keys:   keys,
+	}
+
+	if err := w.templates.ExecuteTemplate(rw, "ssh-keys.html", data); err != nil {
+		logger.Errorf("Failed to render SSH keys template: %v", err)
+		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+// createSSHKey creates a new SSH key
+func (w *WebUI) createSSHKey(rw http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(rw, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+	publicKey := r.FormValue("public_key")
+	comment := r.FormValue("comment")
+
+	if name == "" || publicKey == "" {
+		http.Error(rw, "Name and public key required", http.StatusBadRequest)
+		return
+	}
+
+	if err := w.sshKeyStore.AddKey(name, publicKey, comment); err != nil {
+		logger.Errorf("Failed to create SSH key %s: %v", name, err)
+		// Return specific error message to the user
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(rw, fmt.Sprintf("SSH key %s already exists", name), http.StatusConflict)
+		} else {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	logger.Infof("SSH key %s created", name)
+
+	// Redirect back to SSH keys page
+	http.Redirect(rw, r, "/ssh-keys", http.StatusSeeOther)
+}
+
 // getTunnels gets tunnel information from the tunnel provider
 func (w *WebUI) getTunnels() []Tunnel {
 	// Try SSH tunnel provider first (preferred)
@@ -377,6 +488,7 @@ func (w *WebUI) loadTemplates() {
         <nav>
             <a href="/">Dashboard</a>
             <a href="/users">Manage Users</a>
+            <a href="/ssh-keys">SSH Keys</a>
         </nav>
 
         <main>
@@ -444,6 +556,7 @@ func (w *WebUI) loadTemplates() {
         <nav>
             <a href="/">Dashboard</a>
             <a href="/users">Manage Users</a>
+            <a href="/ssh-keys">SSH Keys</a>
         </nav>
 
         <main>
@@ -509,9 +622,114 @@ func (w *WebUI) loadTemplates() {
 </html>
 `
 
+	sshKeysTemplate := `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSH Key Management - {{.Domain}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SSH Key Management</h1>
+            <p>SSH Tunnel Server for {{.Domain}}</p>
+        </header>
+
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/users">Manage Users</a>
+            <a href="/ssh-keys">SSH Keys</a>
+        </nav>
+
+        <main>
+            <section class="ssh-key-form">
+                <h2>Add New SSH Key</h2>
+                <form method="POST" action="/ssh-keys">
+                    <div class="form-group">
+                        <label for="name">Key Name:</label>
+                        <input type="text" id="name" name="name" required placeholder="e.g., laptop-key, work-computer">
+                    </div>
+                    <div class="form-group">
+                        <label for="public_key">Public Key:</label>
+                        <textarea id="public_key" name="public_key" required rows="4" placeholder="ssh-rsa AAAAB3... or ssh-ed25519 AAAAC3..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="comment">Comment (optional):</label>
+                        <input type="text" id="comment" name="comment" placeholder="Description for this key">
+                    </div>
+                    <button type="submit">Add SSH Key</button>
+                </form>
+            </section>
+
+            <section class="ssh-keys-list">
+                <h2>Configured SSH Keys</h2>
+                {{if .Keys}}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Key Type</th>
+                                <th>Comment</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Keys}}
+                            <tr>
+                                <td>{{.Name}}</td>
+                                <td><span class="key-type">{{.KeyType}}</span></td>
+                                <td>{{.Comment}}</td>
+                                <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                                <td>
+                                    <button onclick="deleteSSHKey('{{.Name}}')" class="delete-btn">Delete</button>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                {{else}}
+                    <p class="no-keys">No SSH keys configured</p>
+                {{end}}
+            </section>
+
+            <section class="ssh-info">
+                <h2>How to Generate SSH Keys</h2>
+                <div class="ssh-info-content">
+                    <p>To generate a new SSH key pair:</p>
+                    <code>ssh-keygen -t ed25519 -C "your-email@example.com"</code>
+                    <p>Then copy your public key (usually in ~/.ssh/id_ed25519.pub) and paste it above.</p>
+                    <p>For RSA keys (legacy compatibility):</p>
+                    <code>ssh-keygen -t rsa -b 4096 -C "your-email@example.com"</code>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        function deleteSSHKey(keyName) {
+            if (confirm('Are you sure you want to delete SSH key: ' + keyName + '?')) {
+                fetch('/ssh-keys/' + keyName, {
+                    method: 'DELETE'
+                }).then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        alert('Failed to delete SSH key');
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>
+`
+
 	tmpl := template.New("webui")
 	template.Must(tmpl.New("dashboard.html").Parse(dashboardTemplate))
 	template.Must(tmpl.New("users.html").Parse(usersTemplate))
+	template.Must(tmpl.New("ssh-keys.html").Parse(sshKeysTemplate))
 
 	w.templates = tmpl
 }
@@ -599,7 +817,7 @@ th {
     font-weight: 500;
 }
 
-.no-tunnels, .no-users {
+.no-tunnels, .no-users, .no-keys {
     text-align: center;
     color: #666;
     font-style: italic;
@@ -640,6 +858,26 @@ th {
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 14px;
+}
+
+.form-group textarea {
+    width: 100%;
+    max-width: 500px;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+}
+
+.key-type {
+    background: #e8f4f8;
+    color: #2c3e50;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
 }
 
 button {
