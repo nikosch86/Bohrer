@@ -13,7 +13,7 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 
 2. **Access your service:**
    ```
-   Tunnel created: http://abc123.your-server.com:8080
+   Tunnel created: http://happy-cloud-42.your-server.com:8080
    ```
    Your local service running on port 3000 is now accessible at the provided URL.
 
@@ -78,11 +78,11 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
                                             │
                                             ▼
                                       Subdomain Generator
-                                      abc123.your-server.com
+                                      happy-cloud-42.your-server.com
 ```
 
 1. **SSH Connection**: You connect via SSH with remote port forwarding (`-R`)
-2. **Subdomain Generation**: Server creates a unique subdomain (e.g., `abc123.your-server.com`)
+2. **Subdomain Generation**: Server creates a unique subdomain (e.g., `happy-cloud-42.your-server.com`)
 3. **HTTP Proxy**: Server routes HTTP requests from the subdomain to your SSH tunnel
 4. **Secure Access**: Your local service becomes accessible via the public subdomain
 5. **WebUI Management**: Visit the root domain to manage tunnels and users
@@ -548,7 +548,7 @@ docker compose logs ssh-tunnel
 curl -I http://your-server.com:8080
 
 # Test with subdomain
-curl -H "Host: abc123.your-server.com" http://your-server.com:8080
+curl -H "Host: happy-cloud-42.your-server.com" http://your-server.com:8080
 ```
 
 **Local service not responding:**

@@ -763,12 +763,35 @@ func (s *Server) handleDirectTcpip(newChannel ssh.NewChannel) {
 }
 
 func generateSubdomain() string {
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 8)
-	for i := range b {
-		b[i] = chars[mathrand.Intn(len(chars))]
+	// Human-readable adjectives and nouns for memorable subdomains
+	adjectives := []string{
+		"happy", "bright", "calm", "swift", "clever", "gentle", "bold", "warm",
+		"cool", "fresh", "quiet", "smart", "kind", "brave", "quick", "smooth",
+		"clear", "sweet", "bright", "clean", "pure", "sharp", "soft", "strong",
+		"light", "dark", "deep", "high", "wide", "rich", "full", "empty",
+		"young", "old", "new", "fast", "slow", "big", "small", "long", "short",
+		"hot", "cold", "dry", "wet", "loud", "soft", "hard", "easy", "tough",
+		"wild", "tame", "free", "busy", "lazy", "eager", "proud", "shy",
 	}
-	return string(b)
+
+	nouns := []string{
+		"cat", "dog", "bird", "fish", "tree", "star", "moon", "sun", "cloud",
+		"wave", "rock", "leaf", "flower", "grass", "wind", "rain", "snow",
+		"fire", "water", "earth", "sky", "mountain", "valley", "river", "ocean",
+		"forest", "desert", "island", "bridge", "castle", "tower", "garden",
+		"house", "door", "window", "road", "path", "field", "meadow", "pond",
+		"lake", "stream", "brook", "hill", "cliff", "cave", "beach", "shore",
+		"storm", "rainbow", "thunder", "lightning", "sunset", "sunrise", "dawn",
+		"dusk", "morning", "evening", "night", "day", "hour", "moment", "time",
+	}
+
+	adjective := adjectives[mathrand.Intn(len(adjectives))]
+	noun := nouns[mathrand.Intn(len(nouns))]
+	
+	// Add a random number to ensure uniqueness in case of collisions
+	number := mathrand.Intn(100)
+	
+	return fmt.Sprintf("%s-%s-%d", adjective, noun, number)
 }
 
 // parseTcpipForwardPayload parses the payload of a tcpip-forward request

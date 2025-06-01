@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -56,22 +58,27 @@ func TestNewServer(t *testing.T) {
 func TestGenerateSubdomain(t *testing.T) {
 	subdomain := generateSubdomain()
 	
-	if len(subdomain) != 8 {
-		t.Errorf("Expected subdomain length 8, got %d", len(subdomain))
+	// Test the format: adjective-noun-number
+	parts := strings.Split(subdomain, "-")
+	if len(parts) != 3 {
+		t.Errorf("Expected subdomain format 'adjective-noun-number', got '%s' with %d parts", subdomain, len(parts))
 	}
 	
-	// Test that it only contains valid characters
-	validChars := "abcdefghijklmnopqrstuvwxyz0123456789"
-	for _, char := range subdomain {
-		found := false
-		for _, valid := range validChars {
-			if char == valid {
-				found = true
-				break
-			}
+	// Test that all parts contain only valid characters (lowercase letters, numbers, hyphens)
+	validPattern := regexp.MustCompile(`^[a-z]+-[a-z]+-[0-9]+$`)
+	if !validPattern.MatchString(subdomain) {
+		t.Errorf("Subdomain '%s' doesn't match expected pattern 'adjective-noun-number'", subdomain)
+	}
+	
+	// Test that the number part is within expected range (0-99)
+	if len(parts) == 3 {
+		numberStr := parts[2]
+		number, err := strconv.Atoi(numberStr)
+		if err != nil {
+			t.Errorf("Expected number part to be valid integer, got '%s'", numberStr)
 		}
-		if !found {
-			t.Errorf("Invalid character '%c' in subdomain '%s'", char, subdomain)
+		if number < 0 || number >= 100 {
+			t.Errorf("Expected number between 0-99, got %d", number)
 		}
 	}
 	
@@ -82,9 +89,16 @@ func TestGenerateSubdomain(t *testing.T) {
 		subdomains[sub] = true
 	}
 	
-	// Should have generated many unique subdomains
-	if len(subdomains) < 50 {
+	// Should have generated many unique subdomains (expect high uniqueness due to random numbers)
+	if len(subdomains) < 80 {
 		t.Errorf("Expected high uniqueness, got only %d unique subdomains out of 100", len(subdomains))
+	}
+	
+	// Test that all generated subdomains follow the correct format
+	for sub := range subdomains {
+		if !validPattern.MatchString(sub) {
+			t.Errorf("Generated subdomain '%s' doesn't match expected pattern", sub)
+		}
 	}
 }
 
