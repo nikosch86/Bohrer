@@ -157,7 +157,7 @@ func TestStartValidPort(t *testing.T) {
 	}()
 	
 	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	
 	// Test that server is listening
 	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
@@ -321,7 +321,7 @@ func TestHandleConnectionValidHandshake(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 	
 	// Try to establish SSH connection
@@ -343,7 +343,7 @@ func TestHandleConnectionValidHandshake(t *testing.T) {
 	select {
 	case <-done:
 		// Connection handled successfully
-	case <-time.After(2 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Log("Test completed (handleConnection may still be running)")
 	}
 }
@@ -1063,7 +1063,7 @@ func TestTCPConnectionBridging(t *testing.T) {
 	sshChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
 	
 	// Test the bridge function with very short timeout
-	err := bridgeConnections(sshChannel, conn1, 50*time.Millisecond)
+	err := bridgeConnections(sshChannel, conn1, 5*time.Millisecond)
 	
 	// We expect an error (timeout or EOF) since mock doesn't provide real data flow
 	if err == nil {
@@ -1287,7 +1287,7 @@ func TestHandleConnectionTcpipForward(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 	
 	// Channel to communicate test results from goroutine
@@ -1352,7 +1352,7 @@ func TestHandleConnectionTcpipForward(t *testing.T) {
 			return
 		}
 		t.Log("SSH client test completed successfully")
-	case <-time.After(2 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Log("SSH client test timed out")
 		// Don't fail - timeout is acceptable in race conditions
 	}
@@ -1361,7 +1361,7 @@ func TestHandleConnectionTcpipForward(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("Server connection handling completed")
-	case <-time.After(1 * time.Second):
+	case <-time.After(100 * time.Millisecond):
 		t.Log("Server handling completed with timeout (acceptable)")
 	}
 	
@@ -1418,7 +1418,7 @@ func TestHandleConnectionSessionChannel(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 	
 	// Test session channel creation
@@ -1462,14 +1462,14 @@ func TestHandleConnectionSessionChannel(t *testing.T) {
 			}
 		}()
 		
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}()
 	
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		t.Log("Session channel test completed")
-	case <-time.After(3 * time.Second):
+	case <-time.After(300 * time.Millisecond):
 		t.Log("Session channel test completed with timeout")
 	}
 }
@@ -1527,7 +1527,7 @@ func TestHandleConnectionDirectTcpip(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 	
 	// Test direct-tcpip channel creation
@@ -1572,14 +1572,14 @@ func TestHandleConnectionDirectTcpip(t *testing.T) {
 			}
 		}()
 		
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}()
 	
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		t.Log("Direct-tcpip test completed")
-	case <-time.After(3 * time.Second):
+	case <-time.After(300 * time.Millisecond):
 		t.Log("Direct-tcpip test completed with timeout")
 	}
 }
@@ -1625,7 +1625,7 @@ func TestHandleConnectionUnknownChannelType(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 	
 	// Test unknown channel type
@@ -1655,14 +1655,14 @@ func TestHandleConnectionUnknownChannelType(t *testing.T) {
 			}
 		}()
 		
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}()
 	
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		t.Log("Unknown channel type test completed")
-	case <-time.After(3 * time.Second):
+	case <-time.After(300 * time.Millisecond):
 		t.Log("Unknown channel type test completed with timeout")
 	}
 }
@@ -1767,7 +1767,7 @@ func TestHandleConnectionErrorPaths(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("Successfully handled invalid SSH config")
-	case <-time.After(1 * time.Second):
+	case <-time.After(100 * time.Millisecond):
 		t.Log("Handle connection completed with timeout (acceptable)")
 	}
 }
@@ -2001,10 +2001,10 @@ func TestStartRemoteForwardListener(t *testing.T) {
 	go server.startRemoteForwardListener(testPort, mockSSHConn)
 	
 	// Give it time to start
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	
 	// Try to connect to the port to verify it's listening
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf(":%d", testPort), 100*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf(":%d", testPort), 10*time.Millisecond)
 	if err == nil {
 		conn.Close()
 		t.Log("Successfully connected to test port - listener is working")
@@ -2217,7 +2217,7 @@ func TestBridgeConnectionsTimeout(t *testing.T) {
 	mockChannel := &mockSSHChannel{}
 
 	// Test bridgeConnections with a very short timeout
-	err := bridgeConnections(mockChannel, conn1, 10*time.Millisecond)
+	err := bridgeConnections(mockChannel, conn1, 1*time.Millisecond)
 	
 	// Should timeout
 	if err == nil {
@@ -2332,7 +2332,7 @@ func TestHandleConnectionGlobalRequestsUnknown(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 
 	go func() {
@@ -2356,14 +2356,14 @@ func TestHandleConnectionGlobalRequestsUnknown(t *testing.T) {
 		// Send invalid tcpip-forward
 		sshConn.SendRequest("tcpip-forward", false, []byte{0, 1}) // Invalid payload
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}()
 
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		t.Log("Unknown global request test completed")
-	case <-time.After(2 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Log("Unknown global request test completed with timeout")
 	}
 }
@@ -2408,7 +2408,7 @@ func TestHandleConnectionSessionCleanup(t *testing.T) {
 			ssh.Password("test123"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second,
+		Timeout:         100 * time.Millisecond,
 	}
 
 	go func() {
@@ -2440,7 +2440,7 @@ func TestHandleConnectionSessionCleanup(t *testing.T) {
 			
 			// Send some data and close quickly to test cleanup
 			channel.Write([]byte("test\n"))
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 			channel.Close()
 		}
 
@@ -2451,14 +2451,14 @@ func TestHandleConnectionSessionCleanup(t *testing.T) {
 			}
 		}()
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}()
 
 	// Wait for completion or timeout
 	select {
 	case <-done:
 		t.Log("Session cleanup test completed")
-	case <-time.After(3 * time.Second):
+	case <-time.After(300 * time.Millisecond):
 		t.Log("Session cleanup test completed with timeout")
 	}
 }
@@ -2501,7 +2501,7 @@ func TestHandleConnectionWaitError(t *testing.T) {
 				ssh.Password("test123"),
 			},
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Timeout:         500 * time.Millisecond,
+			Timeout:         50 * time.Millisecond,
 		}
 
 		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
@@ -2517,7 +2517,7 @@ func TestHandleConnectionWaitError(t *testing.T) {
 		}()
 
 		// Close connection abruptly to cause Wait() error
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		sshConn.Close()
 	}()
 
@@ -2525,7 +2525,7 @@ func TestHandleConnectionWaitError(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("Wait error test completed")
-	case <-time.After(2 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Log("Wait error test completed with timeout")
 	}
 }
@@ -2569,7 +2569,7 @@ func TestHandleConnectionAcceptError(t *testing.T) {
 				ssh.Password("test123"),
 			},
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Timeout:         time.Second,
+			Timeout:         100 * time.Millisecond,
 		}
 
 		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
@@ -2586,12 +2586,12 @@ func TestHandleConnectionAcceptError(t *testing.T) {
 
 		// Try to open channel but close connection immediately to cause accept errors
 		go func() {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 			sshConn.Close() // This should cause accept errors
 		}()
 
 		// Try to open session after connection starts closing
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		sshConn.OpenChannel("session", nil)
 	}()
 
@@ -2599,7 +2599,7 @@ func TestHandleConnectionAcceptError(t *testing.T) {
 	select {
 	case <-done:
 		t.Log("Accept error test completed")
-	case <-time.After(2 * time.Second):
+	case <-time.After(200 * time.Millisecond):
 		t.Log("Accept error test completed with timeout")
 	}
 }

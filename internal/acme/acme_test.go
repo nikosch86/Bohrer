@@ -2298,6 +2298,6 @@ func setupTestHTTPClient() *http.Client {
 	}
 	return &http.Client{
 		Transport: tr,
-		Timeout:   30 * time.Second,
+		Timeout:   3 * time.Second,
 	}
 }
