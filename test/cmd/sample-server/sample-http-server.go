@@ -33,7 +33,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
-		
+
 		log.Printf("Served request: %s %s", r.Method, r.URL.Path)
 	})
 

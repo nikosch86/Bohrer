@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	
+
 	"bohrer-go/internal/testutil"
 )
 
@@ -297,20 +297,20 @@ func TestSSHKeyStore_AuthorizedKeysFormat(t *testing.T) {
 
 	// Add keys with different scenarios
 	store.AddKey("key1", testutil.ValidRSAKey, "Comment 1")
-	store.AddKey("key2", testutil.ValidED25519Key, "")  // No comment
-	
+	store.AddKey("key2", testutil.ValidED25519Key, "") // No comment
+
 	content := store.GetAuthorizedKeysContent()
 	lines := strings.Split(strings.TrimSpace(content), "\n")
-	
+
 	if len(lines) != 2 {
 		t.Errorf("Expected 2 lines, got %d", len(lines))
 	}
-	
+
 	// First key should have comment appended
 	if !strings.Contains(lines[0], "Comment 1") {
 		t.Error("First key should have comment")
 	}
-	
+
 	// Second key already has a comment in the key itself
 	if !strings.Contains(lines[1], testutil.ValidED25519Key) {
 		t.Error("Second key should be present")
@@ -362,8 +362,8 @@ func TestFormatAuthorizedKeysContent(t *testing.T) {
 			},
 		},
 		{
-			name: "empty keys",
-			keys: []SSHKeyData{},
+			name:     "empty keys",
+			keys:     []SSHKeyData{},
 			expected: []string{},
 		},
 	}
@@ -372,17 +372,17 @@ func TestFormatAuthorizedKeysContent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := FormatAuthorizedKeysContent(tt.keys)
 			lines := strings.Split(strings.TrimSpace(result), "\n")
-			
+
 			// Handle empty case
 			if len(tt.expected) == 0 && result == "" {
 				return
 			}
-			
+
 			if len(lines) != len(tt.expected) {
 				t.Errorf("Expected %d lines, got %d", len(tt.expected), len(lines))
 				return
 			}
-			
+
 			for i, expected := range tt.expected {
 				if lines[i] != expected {
 					t.Errorf("Line %d: expected %q, got %q", i, expected, lines[i])

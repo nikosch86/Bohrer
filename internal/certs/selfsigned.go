@@ -10,11 +10,10 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
 )
 
@@ -46,12 +45,12 @@ func GenerateWildcardCertificate(cfg *config.Config) error {
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{},
-		DNSNames:     domains,
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{},
+		DNSNames:    domains,
 	}
 
 	// Add localhost and common local IPs
@@ -64,29 +63,16 @@ func GenerateWildcardCertificate(cfg *config.Config) error {
 		return fmt.Errorf("creating certificate: %w", err)
 	}
 
-	// Create directory if it doesn't exist
-	certDir := filepath.Dir(cfg.ACMECertPath)
-	if err := os.MkdirAll(certDir, dirPerm); err != nil {
-		return fmt.Errorf("creating certificate directory: %w", err)
+	// Encode certificate to PEM
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if certPEM == nil {
+		return fmt.Errorf("failed to encode certificate to PEM")
 	}
 
 	// Save certificate
-	certOut, err := os.Create(cfg.ACMECertPath)
-	if err != nil {
-		return fmt.Errorf("creating certificate file: %w", err)
+	if err := fileutil.WriteFileWithDir(cfg.ACMECertPath, certPEM, filePerm); err != nil {
+		return fmt.Errorf("saving certificate: %w", err)
 	}
-	defer certOut.Close()
-
-	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
-		return fmt.Errorf("encoding certificate: %w", err)
-	}
-
-	// Save private key
-	keyOut, err := os.Create(cfg.ACMEKeyPath)
-	if err != nil {
-		return fmt.Errorf("creating key file: %w", err)
-	}
-	defer keyOut.Close()
 
 	// Encode private key
 	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
@@ -94,13 +80,14 @@ func GenerateWildcardCertificate(cfg *config.Config) error {
 		return fmt.Errorf("marshaling private key: %w", err)
 	}
 
-	if err := pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}); err != nil {
-		return fmt.Errorf("encoding private key: %w", err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	if keyPEM == nil {
+		return fmt.Errorf("failed to encode private key to PEM")
 	}
 
-	// Set proper permissions
-	if err := os.Chmod(cfg.ACMEKeyPath, keyPerm); err != nil {
-		return fmt.Errorf("setting key file permissions: %w", err)
+	// Save private key with restricted permissions
+	if err := fileutil.WriteFileWithDir(cfg.ACMEKeyPath, keyPEM, keyPerm); err != nil {
+		return fmt.Errorf("saving private key: %w", err)
 	}
 
 	logger.Debugf("Wildcard self-signed certificate generated for *.%s", cfg.Domain)
@@ -128,12 +115,12 @@ func GenerateSelfSignedCertificate(cfg *config.Config, domains []string) error {
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{},
-		DNSNames:     domains,
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{},
+		DNSNames:    domains,
 	}
 
 	// Add localhost and common local IPs
@@ -153,29 +140,16 @@ func GenerateSelfSignedCertificate(cfg *config.Config, domains []string) error {
 		return fmt.Errorf("creating certificate: %w", err)
 	}
 
-	// Create directory if it doesn't exist
-	certDir := filepath.Dir(cfg.ACMECertPath)
-	if err := os.MkdirAll(certDir, dirPerm); err != nil {
-		return fmt.Errorf("creating certificate directory: %w", err)
+	// Encode certificate to PEM
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if certPEM == nil {
+		return fmt.Errorf("failed to encode certificate to PEM")
 	}
 
 	// Save certificate
-	certOut, err := os.Create(cfg.ACMECertPath)
-	if err != nil {
-		return fmt.Errorf("creating certificate file: %w", err)
+	if err := fileutil.WriteFileWithDir(cfg.ACMECertPath, certPEM, filePerm); err != nil {
+		return fmt.Errorf("saving certificate: %w", err)
 	}
-	defer certOut.Close()
-
-	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
-		return fmt.Errorf("encoding certificate: %w", err)
-	}
-
-	// Save private key
-	keyOut, err := os.Create(cfg.ACMEKeyPath)
-	if err != nil {
-		return fmt.Errorf("creating key file: %w", err)
-	}
-	defer keyOut.Close()
 
 	// Encode private key
 	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
@@ -183,13 +157,14 @@ func GenerateSelfSignedCertificate(cfg *config.Config, domains []string) error {
 		return fmt.Errorf("marshaling private key: %w", err)
 	}
 
-	if err := pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}); err != nil {
-		return fmt.Errorf("encoding private key: %w", err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	if keyPEM == nil {
+		return fmt.Errorf("failed to encode private key to PEM")
 	}
 
-	// Set proper permissions
-	if err := os.Chmod(cfg.ACMEKeyPath, keyPerm); err != nil {
-		return fmt.Errorf("setting key file permissions: %w", err)
+	// Save private key with restricted permissions
+	if err := fileutil.WriteFileWithDir(cfg.ACMEKeyPath, keyPEM, keyPerm); err != nil {
+		return fmt.Errorf("saving private key: %w", err)
 	}
 
 	logger.Debugf("Self-signed certificate generated for domains: %v", domains)

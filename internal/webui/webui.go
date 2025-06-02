@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
 )
 
@@ -51,14 +52,14 @@ type Tunnel struct {
 
 // WebUI handles the web interface
 type WebUI struct {
-	config             *config.Config
-	tunnelProvider     TunnelProvider
-	sshTunnelProvider  SSHTunnelProvider
-	userStore          UserStore
-	sshKeyStore        SSHKeyStore
-	templates          *template.Template
-	adminUsername      string
-	adminPassword      string
+	config            *config.Config
+	tunnelProvider    TunnelProvider
+	sshTunnelProvider SSHTunnelProvider
+	userStore         UserStore
+	sshKeyStore       SSHKeyStore
+	templates         *template.Template
+	adminUsername     string
+	adminPassword     string
 }
 
 // generateRandomString generates a secure random string for passwords
@@ -255,7 +256,7 @@ func (w *WebUI) handleAPITunnels(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	tunnels := w.getTunnels()
-	
+
 	rw.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(rw).Encode(tunnels); err != nil {
 		LogAndHTTPError(rw, "Failed to encode tunnels JSON: %v", err)
@@ -1112,10 +1113,10 @@ func (s *InMemoryUserStore) VerifyPassword(username, password string) bool {
 
 // UserData represents the stored user information
 type UserData struct {
-	Username    string    `json:"username"`
-	PasswordHash string   `json:"password_hash"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"password_hash"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // FileUserStore implements UserStore interface with file-based persistence
@@ -1127,12 +1128,6 @@ type FileUserStore struct {
 
 // NewFileUserStore creates a new file-based user store
 func NewFileUserStore(filePath string) (*FileUserStore, error) {
-	// Ensure directory exists
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-
 	store := &FileUserStore{
 		filePath: filePath,
 		users:    make(map[string]UserData),
@@ -1197,15 +1192,9 @@ func (s *FileUserStore) saveToFile() error {
 		return fmt.Errorf("failed to marshal JSON: %v", err)
 	}
 
-	// Write to temporary file first, then rename for atomic operation
-	tempFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary file: %v", err)
-	}
-
-	if err := os.Rename(tempFile, s.filePath); err != nil {
-		os.Remove(tempFile) // Clean up temp file on error
-		return fmt.Errorf("failed to rename temporary file: %v", err)
+	// Use atomic write to prevent corruption
+	if err := fileutil.WriteAtomicFile(s.filePath, data, 0644); err != nil {
+		return err
 	}
 
 	logger.Debugf("Saved %d users to file %s", len(users), s.filePath)

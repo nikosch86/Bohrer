@@ -36,7 +36,7 @@ func TestDashboardHandler(t *testing.T) {
 	}
 
 	webui := NewWebUI(cfg)
-	
+
 	// Create mock tunnel provider
 	mockProvider := &MockTunnelProvider{
 		tunnels: []Tunnel{
@@ -144,7 +144,7 @@ func TestTunnelProviderIntegration(t *testing.T) {
 	}
 
 	webui := NewWebUI(cfg)
-	
+
 	// Initially no tunnel provider
 	tunnels := webui.getTunnels()
 	if len(tunnels) != 0 {
@@ -228,24 +228,23 @@ func (m *MockUserStore) VerifyPassword(username, password string) bool {
 
 func TestInMemoryUserStore_DuplicateUser(t *testing.T) {
 	store := NewInMemoryUserStore()
-	
+
 	// Create first user
 	err := store.CreateUser("alice", "password123")
 	if err != nil {
 		t.Fatalf("Failed to create first user: %v", err)
 	}
-	
+
 	// Try to create duplicate user
 	err = store.CreateUser("alice", "differentpassword")
 	if err == nil {
 		t.Error("Expected error when creating duplicate user, got nil")
 	}
-	
+
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("Expected 'already exists' error, got: %v", err)
 	}
 }
-
 
 func TestWebUI_CreateUser_Duplicate(t *testing.T) {
 	cfg := &config.Config{
@@ -253,28 +252,28 @@ func TestWebUI_CreateUser_Duplicate(t *testing.T) {
 		WebUIUsername: "admin",
 		WebUIPassword: "admin123",
 	}
-	
+
 	webui := NewWebUI(cfg)
-	
+
 	// Create first user
 	err := webui.GetUserStore().CreateUser("charlie", "pass789")
 	if err != nil {
 		t.Fatalf("Failed to create first user: %v", err)
 	}
-	
+
 	// Test duplicate user creation via HTTP endpoint
 	req := httptest.NewRequest("POST", "/users", strings.NewReader("username=charlie&password=newpass"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth("admin", "admin123")
 	rr := httptest.NewRecorder()
-	
+
 	webui.handleUsers(rr, req)
-	
+
 	// Check for conflict status
 	if rr.Code != http.StatusConflict {
 		t.Errorf("Expected status 409 (Conflict), got %d", rr.Code)
 	}
-	
+
 	// Check error message
 	body := rr.Body.String()
 	if !strings.Contains(body, "already exists") {
@@ -288,7 +287,7 @@ func TestHandleAPITunnels(t *testing.T) {
 	}
 
 	webui := NewWebUI(cfg)
-	
+
 	// Create mock tunnel provider
 	mockProvider := &MockTunnelProvider{
 		tunnels: []Tunnel{
@@ -341,7 +340,7 @@ func TestGetSSHKeyStore(t *testing.T) {
 	}
 
 	webui := NewWebUI(cfg)
-	
+
 	keyStore := webui.GetSSHKeyStore()
 	if keyStore == nil {
 		t.Fatal("Expected SSH key store to be initialized")
@@ -441,7 +440,7 @@ func TestHandleDeleteSSHKey(t *testing.T) {
 
 func TestInMemoryUserStore_VerifyPassword(t *testing.T) {
 	store := NewInMemoryUserStore()
-	
+
 	// Create a user
 	err := store.CreateUser("testuser", "testpass")
 	if err != nil {

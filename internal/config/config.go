@@ -19,9 +19,9 @@ type Config struct {
 	ACMEKeyPath       string
 	ACMEChallengeDir  string
 	ACMERenewalDays   int
-	ACMEForceLocal    bool  // Force ACME even for local domains (for custom PKI)
+	ACMEForceLocal    bool   // Force ACME even for local domains (for custom PKI)
 	ACMEDirectoryURL  string // Custom ACME directory URL (empty = Let's Encrypt)
-	SkipACME          bool  // Skip ACME entirely, use self-signed certificates
+	SkipACME          bool   // Skip ACME entirely, use self-signed certificates
 	AuthorizedKeys    string
 	LogLevel          string // Log level: DEBUG, INFO, WARN, ERROR, FATAL
 	UserStorageType   string // User storage type: "memory" or "file"
@@ -37,9 +37,9 @@ func Load() *Config {
 		SSHPort:           getEnvInt("SSH_PORT", 22),
 		HTTPPort:          getEnvInt("HTTP_PORT", 80),
 		HTTPSPort:         getEnvInt("HTTPS_PORT", 443),
-		HTTPExternalPort:  getEnvInt("HTTP_EXTERNAL_PORT", 0), // 0 means use HTTPPort
+		HTTPExternalPort:  getEnvInt("HTTP_EXTERNAL_PORT", 0),  // 0 means use HTTPPort
 		HTTPSExternalPort: getEnvInt("HTTPS_EXTERNAL_PORT", 0), // 0 means use HTTPSPort
-		SSHExternalPort:   getEnvInt("SSH_EXTERNAL_PORT", 0), // 0 means use SSHPort
+		SSHExternalPort:   getEnvInt("SSH_EXTERNAL_PORT", 0),   // 0 means use SSHPort
 		ACMEStaging:       getEnv("ACME_STAGING", "true") == "true",
 		ACMECertPath:      getEnv("ACME_CERT_PATH", "/data/certs/fullchain.pem"),
 		ACMEKeyPath:       getEnv("ACME_KEY_PATH", "/data/certs/key.pem"),
@@ -55,7 +55,7 @@ func Load() *Config {
 		WebUIUsername:     getEnv("WEBUI_USERNAME", ""),
 		WebUIPassword:     getEnv("WEBUI_PASSWORD", ""),
 	}
-	
+
 	// If external ports are not set, use internal ports
 	if cfg.HTTPExternalPort == 0 {
 		cfg.HTTPExternalPort = cfg.HTTPPort
@@ -63,7 +63,7 @@ func Load() *Config {
 	if cfg.HTTPSExternalPort == 0 {
 		cfg.HTTPSExternalPort = cfg.HTTPSPort
 	}
-	
+
 	return cfg
 }
 
@@ -82,4 +82,3 @@ func getEnvInt(key string, fallback int) int {
 	}
 	return fallback
 }
-

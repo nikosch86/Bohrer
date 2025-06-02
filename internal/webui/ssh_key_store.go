@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/ssh"
+	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
+	"golang.org/x/crypto/ssh"
 )
 
 // ValidateSSHPublicKey validates an SSH public key format
@@ -18,7 +18,7 @@ import (
 func ValidateSSHPublicKey(publicKey string) error {
 	// Trim whitespace
 	publicKey = strings.TrimSpace(publicKey)
-	
+
 	if publicKey == "" {
 		return fmt.Errorf("public key cannot be empty")
 	}
@@ -76,12 +76,6 @@ type FileSSHKeyStore struct {
 
 // NewFileSSHKeyStore creates a new file-based SSH key store
 func NewFileSSHKeyStore(filePath string) (*FileSSHKeyStore, error) {
-	// Ensure directory exists
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-
 	store := &FileSSHKeyStore{
 		filePath: filePath,
 		keys:     make(map[string]SSHKeyData),
@@ -146,15 +140,9 @@ func (s *FileSSHKeyStore) saveToFile() error {
 		return fmt.Errorf("failed to marshal JSON: %v", err)
 	}
 
-	// Write to temporary file first, then rename for atomic operation
-	tempFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temporary file: %v", err)
-	}
-
-	if err := os.Rename(tempFile, s.filePath); err != nil {
-		os.Remove(tempFile) // Clean up temp file on error
-		return fmt.Errorf("failed to rename temporary file: %v", err)
+	// Use atomic write to prevent corruption
+	if err := fileutil.WriteAtomicFile(s.filePath, data, 0644); err != nil {
+		return err
 	}
 
 	logger.Debugf("Saved %d SSH keys to file %s", len(keys), s.filePath)

@@ -23,7 +23,7 @@ func TestWebUIAuthentication_ValidCredentials(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 	req.Header.Set("Authorization", "Basic "+auth)
-	
+
 	rr := httptest.NewRecorder()
 	webUI.ServeHTTP(rr, req)
 
@@ -50,7 +50,7 @@ func TestWebUIAuthentication_InvalidCredentials(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:wrongpassword"))
 	req.Header.Set("Authorization", "Basic "+auth)
-	
+
 	rr := httptest.NewRecorder()
 	webUI.ServeHTTP(rr, req)
 
@@ -81,7 +81,7 @@ func TestWebUIAuthentication_InvalidUsername(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	auth := base64.StdEncoding.EncodeToString([]byte("wronguser:testpass123"))
 	req.Header.Set("Authorization", "Basic "+auth)
-	
+
 	rr := httptest.NewRecorder()
 	webUI.ServeHTTP(rr, req)
 
@@ -140,7 +140,7 @@ func TestWebUIAuthentication_AllEndpoints(t *testing.T) {
 		t.Run(endpoint.method+"_"+endpoint.path, func(t *testing.T) {
 			req := httptest.NewRequest(endpoint.method, endpoint.path, nil)
 			req.Header.Set("Authorization", "Basic "+auth)
-			
+
 			rr := httptest.NewRecorder()
 			webUI.ServeHTTP(rr, req)
 
@@ -172,7 +172,7 @@ func TestWebUIAuthentication_GeneratedCredentials(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	auth := base64.StdEncoding.EncodeToString([]byte(webUI.adminUsername + ":" + webUI.adminPassword))
 	req.Header.Set("Authorization", "Basic "+auth)
-	
+
 	rr := httptest.NewRecorder()
 	webUI.ServeHTTP(rr, req)
 
@@ -196,11 +196,11 @@ func TestWebUIAuthentication_ConstantTimeComparison(t *testing.T) {
 		password string
 		expected int
 	}{
-		{"admin", "secret123", http.StatusOK},     // Correct
-		{"admin", "wrong", http.StatusUnauthorized}, // Wrong password, different length
-		{"a", "secret123", http.StatusUnauthorized}, // Wrong username, different length
+		{"admin", "secret123", http.StatusOK},                      // Correct
+		{"admin", "wrong", http.StatusUnauthorized},                // Wrong password, different length
+		{"a", "secret123", http.StatusUnauthorized},                // Wrong username, different length
 		{"administrator", "secret123456", http.StatusUnauthorized}, // Both wrong, longer
-		{"", "", http.StatusUnauthorized}, // Empty credentials
+		{"", "", http.StatusUnauthorized},                          // Empty credentials
 	}
 
 	for _, tc := range testCases {
@@ -208,7 +208,7 @@ func TestWebUIAuthentication_ConstantTimeComparison(t *testing.T) {
 			req := httptest.NewRequest("GET", "/", nil)
 			auth := base64.StdEncoding.EncodeToString([]byte(tc.username + ":" + tc.password))
 			req.Header.Set("Authorization", "Basic "+auth)
-			
+
 			rr := httptest.NewRecorder()
 			webUI.ServeHTTP(rr, req)
 
@@ -256,7 +256,7 @@ func TestGenerateRandomString(t *testing.T) {
 func TestWebUIAuthentication_RegisterRoutes(t *testing.T) {
 	cfg := &config.Config{
 		Domain:        "test.local",
-		WebUIUsername: "admin", 
+		WebUIUsername: "admin",
 		WebUIPassword: "password",
 	}
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/lego"
@@ -70,11 +71,7 @@ type HTTP01Provider struct {
 
 func (p *HTTP01Provider) Present(domain, token, keyAuth string) error {
 	challengePath := filepath.Join(p.challengeDir, token)
-	err := os.MkdirAll(p.challengeDir, dirPerm)
-	if err != nil {
-		return fmt.Errorf("creating challenge directory: %w", err)
-	}
-	return os.WriteFile(challengePath, []byte(keyAuth), filePerm)
+	return fileutil.WriteFileWithDir(challengePath, []byte(keyAuth), filePerm)
 }
 
 func (p *HTTP01Provider) CleanUp(domain, token, keyAuth string) error {
@@ -152,7 +149,7 @@ func (c *Client) getSubdomainKeyPath(subdomain string) string {
 func (c *Client) CheckSubdomainCertificate(subdomain string) (bool, error) {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
 	certPath := c.getSubdomainCertPath(subdomain)
-	
+
 	certBytes, err := os.ReadFile(certPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -246,11 +243,11 @@ func (c *Client) ObtainSubdomainCertificate(ctx context.Context, subdomain strin
 	if err := c.rateLimiter.CanMakeNewOrder(); err != nil {
 		return fmt.Errorf("rate limit check failed for new order: %w", err)
 	}
-	
+
 	if err := c.rateLimiter.CanIssueCertificateForDomain(c.config.Domain); err != nil {
 		return fmt.Errorf("rate limit check failed for domain %s: %w", c.config.Domain, err)
 	}
-	
+
 	if err := c.rateLimiter.CanRetryAuthFailure(fullDomain); err != nil {
 		return fmt.Errorf("rate limit check failed for auth retry on %s: %w", fullDomain, err)
 	}
@@ -269,7 +266,7 @@ func (c *Client) ObtainSubdomainCertificate(ctx context.Context, subdomain strin
 		c.rateLimiter.RecordAuthFailure(fullDomain)
 		return fmt.Errorf("obtaining certificate for subdomain %s: %w", subdomain, err)
 	}
-	
+
 	// Record successful certificate issuance
 	c.rateLimiter.RecordCertificateIssued(c.config.Domain)
 
@@ -283,12 +280,12 @@ func (c *Client) ObtainSubdomainCertificate(ctx context.Context, subdomain strin
 	keyPath := c.getSubdomainKeyPath(subdomain)
 
 	// Save certificate
-	if err := os.WriteFile(certPath, certificates.Certificate, filePerm); err != nil {
+	if err := fileutil.WriteFileWithDir(certPath, certificates.Certificate, filePerm); err != nil {
 		return fmt.Errorf("saving certificate for subdomain %s: %w", subdomain, err)
 	}
 
 	// Save private key
-	if err := os.WriteFile(keyPath, certificates.PrivateKey, keyPerm); err != nil {
+	if err := fileutil.WriteFileWithDir(keyPath, certificates.PrivateKey, keyPerm); err != nil {
 		return fmt.Errorf("saving private key for subdomain %s: %w", subdomain, err)
 	}
 
@@ -306,11 +303,11 @@ func (c *Client) ObtainCertificate(ctx context.Context, domains []string) error 
 	if err := c.rateLimiter.CanMakeNewOrder(); err != nil {
 		return fmt.Errorf("rate limit check failed for new order: %w", err)
 	}
-	
+
 	if err := c.rateLimiter.CanIssueCertificateForDomain(c.config.Domain); err != nil {
 		return fmt.Errorf("rate limit check failed for domain %s: %w", c.config.Domain, err)
 	}
-	
+
 	// Check auth failure rate limits for all domains
 	for _, domain := range domains {
 		if err := c.rateLimiter.CanRetryAuthFailure(domain); err != nil {
@@ -334,23 +331,17 @@ func (c *Client) ObtainCertificate(ctx context.Context, domains []string) error 
 		}
 		return fmt.Errorf("obtaining certificate: %w", err)
 	}
-	
+
 	// Record successful certificate issuance
 	c.rateLimiter.RecordCertificateIssued(c.config.Domain)
 
-	// Create directory if it doesn't exist
-	certDir := filepath.Dir(c.config.ACMECertPath)
-	if err := os.MkdirAll(certDir, dirPerm); err != nil {
-		return fmt.Errorf("creating certificate directory: %w", err)
-	}
-
 	// Save certificate
-	if err := os.WriteFile(c.config.ACMECertPath, certificates.Certificate, filePerm); err != nil {
+	if err := fileutil.WriteFileWithDir(c.config.ACMECertPath, certificates.Certificate, filePerm); err != nil {
 		return fmt.Errorf("saving certificate: %w", err)
 	}
 
 	// Save private key
-	if err := os.WriteFile(c.config.ACMEKeyPath, certificates.PrivateKey, keyPerm); err != nil {
+	if err := fileutil.WriteFileWithDir(c.config.ACMEKeyPath, certificates.PrivateKey, keyPerm); err != nil {
 		return fmt.Errorf("saving private key: %w", err)
 	}
 
@@ -370,17 +361,17 @@ func (c *Client) GetDomains() []string {
 	if c.tunnelProvider == nil {
 		return []string{} // No tunnels, no certificates needed
 	}
-	
+
 	// Get active tunnel subdomains
 	subdomains := c.tunnelProvider.GetActiveTunnelSubdomains()
 	var domains []string
-	
+
 	// Convert subdomains to full domain names
 	for _, subdomain := range subdomains {
 		fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
 		domains = append(domains, fullDomain)
 	}
-	
+
 	return domains
 }
 
@@ -409,29 +400,29 @@ func (c *Client) IsLocalDomain(domain string) bool {
 	if c.config.ACMEForceLocal {
 		return false
 	}
-	
+
 	// Common local domain patterns
 	localPatterns := []string{
 		"localhost",
 		".local",
-		".lan", 
+		".lan",
 		".home",
 		".internal",
 		".dev",
 		".test",
 	}
-	
+
 	for _, pattern := range localPatterns {
 		if domain == pattern[1:] || domain == pattern || strings.HasSuffix(domain, pattern) {
 			return true
 		}
 	}
-	
+
 	// Check for private IP addresses or local hostnames
 	if ip := net.ParseIP(domain); ip != nil {
 		return ip.IsPrivate() || ip.IsLoopback()
 	}
-	
+
 	return false
 }
 
@@ -441,16 +432,16 @@ func (c *Client) EnsureCertificatesForActiveTunnels(ctx context.Context) error {
 		logger.Debugf("No tunnel provider set, skipping certificate management")
 		return nil
 	}
-	
+
 	// Get active tunnel subdomains
 	subdomains := c.tunnelProvider.GetActiveTunnelSubdomains()
 	if len(subdomains) == 0 {
 		logger.Debugf("No active tunnels, no certificates needed")
 		return nil
 	}
-	
+
 	logger.Debugf("Ensuring certificates for active tunnel subdomains: %v", subdomains)
-	
+
 	// Ensure certificate for each subdomain
 	for _, subdomain := range subdomains {
 		if err := c.EnsureSubdomainCertificate(ctx, subdomain); err != nil {
@@ -459,7 +450,7 @@ func (c *Client) EnsureCertificatesForActiveTunnels(ctx context.Context) error {
 			continue
 		}
 	}
-	
+
 	return nil
 }
 
@@ -490,12 +481,12 @@ func (c *Client) GenerateSelfSignedCertificate(domains []string) error {
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{},
-		DNSNames:     domains,
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{},
+		DNSNames:    domains,
 	}
 
 	// Add localhost and common local IPs
@@ -564,17 +555,17 @@ func (c *Client) GenerateSelfSignedCertificate(domains []string) error {
 func (c *Client) CleanupSubdomainCertificate(subdomain string) error {
 	certPath := c.getSubdomainCertPath(subdomain)
 	keyPath := c.getSubdomainKeyPath(subdomain)
-	
+
 	// Remove certificate file
 	if err := os.Remove(certPath); err != nil && !os.IsNotExist(err) {
 		logger.Debugf("Warning: failed to remove certificate file for subdomain %s: %v", subdomain, err)
 	}
-	
+
 	// Remove key file
 	if err := os.Remove(keyPath); err != nil && !os.IsNotExist(err) {
 		logger.Debugf("Warning: failed to remove key file for subdomain %s: %v", subdomain, err)
 	}
-	
+
 	logger.Debugf("Cleaned up certificate files for subdomain %s", subdomain)
 	return nil
 }
@@ -583,16 +574,16 @@ func (c *Client) CleanupSubdomainCertificate(subdomain string) error {
 func (c *Client) StartPeriodicRenewal(ctx context.Context) {
 	// Check certificates every 24 hours
 	ticker := time.NewTicker(24 * time.Hour)
-	
+
 	go func() {
 		defer ticker.Stop()
-		
+
 		logger.Infof("Starting periodic certificate renewal checker (every 24 hours)")
-		
+
 		// Do an initial check after 1 minute to allow system to fully start
 		time.Sleep(1 * time.Minute)
 		c.checkAndRenewCertificates(ctx)
-		
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -608,41 +599,41 @@ func (c *Client) StartPeriodicRenewal(ctx context.Context) {
 // checkAndRenewCertificates checks all active tunnel certificates and renews them if needed
 func (c *Client) checkAndRenewCertificates(ctx context.Context) {
 	logger.Debugf("Running periodic certificate renewal check")
-	
+
 	if c.tunnelProvider == nil {
 		logger.Debugf("No tunnel provider set, skipping certificate renewal check")
 		return
 	}
-	
+
 	// Get active tunnel subdomains
 	subdomains := c.tunnelProvider.GetActiveTunnelSubdomains()
 	if len(subdomains) == 0 {
 		logger.Debugf("No active tunnels, no certificates to check for renewal")
 		return
 	}
-	
+
 	logger.Debugf("Checking certificates for renewal: %v", subdomains)
 	renewalCount := 0
-	
+
 	// Check each subdomain certificate
 	for _, subdomain := range subdomains {
 		fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
-		
+
 		// Skip invalid domains
 		if !c.IsValidDomain(fullDomain) {
 			continue
 		}
-		
+
 		// Check if certificate is valid
 		valid, err := c.CheckSubdomainCertificate(subdomain)
 		if err != nil {
 			logger.Warnf("Error checking certificate for subdomain %s: %v", subdomain, err)
 			continue
 		}
-		
+
 		if !valid {
 			logger.Infof("Certificate for subdomain %s needs renewal", subdomain)
-			
+
 			if c.IsLocalDomain(fullDomain) {
 				// Renew self-signed certificate for local domains
 				if err := c.GenerateSubdomainSelfSignedCertificate(subdomain); err != nil {
@@ -661,7 +652,7 @@ func (c *Client) checkAndRenewCertificates(ctx context.Context) {
 			renewalCount++
 		}
 	}
-	
+
 	if renewalCount > 0 {
 		logger.Infof("✅ Certificate renewal check completed: %d certificates renewed", renewalCount)
 	} else {
@@ -672,19 +663,19 @@ func (c *Client) checkAndRenewCertificates(ctx context.Context) {
 // EnsureSubdomainCertificate ensures a valid certificate exists for a specific subdomain
 func (c *Client) EnsureSubdomainCertificate(ctx context.Context, subdomain string) error {
 	fullDomain := fmt.Sprintf("%s.%s", subdomain, c.config.Domain)
-	
+
 	// Check if domain is valid
 	if !c.IsValidDomain(fullDomain) {
 		logger.Debugf("Domain %s is not valid for certificate generation", fullDomain)
 		return nil
 	}
-	
+
 	// Check if certificate is valid
 	valid, err := c.CheckSubdomainCertificate(subdomain)
 	if err != nil {
 		return fmt.Errorf("checking certificate for subdomain %s: %w", subdomain, err)
 	}
-	
+
 	if !valid {
 		if c.IsLocalDomain(fullDomain) {
 			// Generate self-signed certificate for local domains
@@ -698,7 +689,7 @@ func (c *Client) EnsureSubdomainCertificate(ctx context.Context, subdomain strin
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -724,12 +715,12 @@ func (c *Client) GenerateSubdomainSelfSignedCertificate(subdomain string) error 
 			StreetAddress: []string{""},
 			PostalCode:    []string{""},
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses:  []net.IP{},
-		DNSNames:     []string{fullDomain},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{},
+		DNSNames:    []string{fullDomain},
 	}
 
 	// Add localhost and common local IPs

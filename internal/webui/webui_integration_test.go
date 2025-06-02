@@ -20,7 +20,7 @@ func TestFullWebUIIntegration(t *testing.T) {
 		WebUIUsername: "testadmin",
 		WebUIPassword: "testpass123",
 	}
-	
+
 	// Create Basic Auth header
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 
@@ -104,7 +104,7 @@ func TestWebUIWithActiveTunnels(t *testing.T) {
 		WebUIUsername: "testadmin",
 		WebUIPassword: "testpass123",
 	}
-	
+
 	// Create Basic Auth header
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 
@@ -195,7 +195,7 @@ func TestWebUIUserManagement(t *testing.T) {
 		WebUIUsername: "testadmin",
 		WebUIPassword: "testpass123",
 	}
-	
+
 	// Create Basic Auth header
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 

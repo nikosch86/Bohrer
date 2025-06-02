@@ -18,12 +18,12 @@ func TestProxyWithWebUI(t *testing.T) {
 		WebUIUsername: "testadmin",
 		WebUIPassword: "testpass123",
 	}
-	
+
 	// Create Basic Auth header
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 
 	proxy := NewProxy(cfg)
-	
+
 	// Create and set WebUI
 	ui := webui.NewWebUI(cfg)
 	proxy.SetWebUI(ui)
@@ -55,10 +55,10 @@ func TestProxyWithSubdomainStillWorks(t *testing.T) {
 	}
 
 	proxy := NewProxy(cfg)
-	
+
 	// Add a tunnel
 	proxy.AddTunnel("api", "localhost:3000")
-	
+
 	// Create and set WebUI
 	ui := webui.NewWebUI(cfg)
 	proxy.SetWebUI(ui)
@@ -85,12 +85,12 @@ func TestProxyWebUIUsersPage(t *testing.T) {
 		WebUIUsername: "testadmin",
 		WebUIPassword: "testpass123",
 	}
-	
+
 	// Create Basic Auth header
 	auth := base64.StdEncoding.EncodeToString([]byte("testadmin:testpass123"))
 
 	proxy := NewProxy(cfg)
-	
+
 	// Create and set WebUI
 	ui := webui.NewWebUI(cfg)
 	proxy.SetWebUI(ui)
@@ -122,7 +122,7 @@ func TestProxyHTTPRootDomainNoWebUI(t *testing.T) {
 	}
 
 	proxy := NewProxy(cfg)
-	
+
 	// Create and set WebUI
 	ui := webui.NewWebUI(cfg)
 	proxy.SetWebUI(ui)

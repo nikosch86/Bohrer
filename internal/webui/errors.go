@@ -83,22 +83,22 @@ func RequireFormFields(w http.ResponseWriter, r *http.Request, fields ...string)
 func ExtractPathParam(w http.ResponseWriter, r *http.Request, basePath string) (string, error) {
 	// Remove trailing slash from base path for comparison
 	basePath = strings.TrimSuffix(basePath, "/")
-	
+
 	// Get the parameter part
 	param := strings.TrimPrefix(r.URL.Path, basePath)
 	param = strings.TrimPrefix(param, "/")
-	
+
 	if param == "" {
 		err := fmt.Errorf("parameter required in path")
 		HTTPErrorf(w, http.StatusBadRequest, "Parameter required")
 		return "", err
 	}
-	
+
 	// If there are more slashes, just take the first part
 	if idx := strings.Index(param, "/"); idx > 0 {
 		param = param[:idx]
 	}
-	
+
 	return param, nil
 }
 

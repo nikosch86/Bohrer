@@ -24,7 +24,7 @@ import (
 func TestNewClientWithStagingServer(t *testing.T) {
 	// Skip this test entirely - it tries to connect to real Let's Encrypt API
 	t.Skip("Skipping test that connects to real Let's Encrypt API")
-	
+
 	// Original test code preserved but skipped
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -39,7 +39,7 @@ func TestNewClientWithStagingServer(t *testing.T) {
 	// Test NewClient with Let's Encrypt staging - exercises the full NewClient function
 	cfg := &config.Config{
 		Domain:           "test.example.com",
-		ACMEEmail:        "test@example.com", 
+		ACMEEmail:        "test@example.com",
 		ACMEStaging:      true,
 		ACMEDirectoryURL: "https://acme-staging-v02.api.letsencrypt.org/directory",
 		ACMECertPath:     filepath.Join(tempDir, "cert.pem"),
@@ -50,7 +50,7 @@ func TestNewClientWithStagingServer(t *testing.T) {
 
 	// Test NewClient creation - this exercises the NewClient function even if it fails
 	client, err := NewClient(cfg)
-	
+
 	// We expect this to fail since we don't have domain control, but it exercises the code
 	if err == nil {
 		// If it succeeds, great! Verify the client structure
@@ -108,7 +108,7 @@ func TestNewClientStructure(t *testing.T) {
 
 	// Since we can't test NewClient without network calls,
 	// we test the components it would create
-	
+
 	// Test user creation
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -294,19 +294,19 @@ func TestGetDomains(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Without tunnel provider, should return empty list
 	domains := client.GetDomains()
 	if len(domains) != 0 {
 		t.Errorf("Expected 0 domains without tunnel provider, got %d", len(domains))
 	}
-	
+
 	// With tunnel provider, should return subdomain domains
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"test123"},
 	}
 	client.SetTunnelProvider(mockProvider)
-	
+
 	domains = client.GetDomains()
 	expected := []string{"test123.example.com"}
 	if len(domains) != len(expected) {
@@ -330,10 +330,10 @@ func TestIsValidDomain(t *testing.T) {
 		{"example.com", true},
 		{"sub.example.com", true},
 		{"test.co.uk", true},
-		{"localhost", true},     // Now valid - will use self-signed
-		{"test.local", true},    // Now valid - will use self-signed
-		{"service.lan", true},   // Now valid - will use self-signed
-		{"nodots", false},       // Still invalid - no dots and not localhost
+		{"localhost", true},   // Now valid - will use self-signed
+		{"test.local", true},  // Now valid - will use self-signed
+		{"service.lan", true}, // Now valid - will use self-signed
+		{"nodots", false},     // Still invalid - no dots and not localhost
 		{"", false},
 	}
 
@@ -363,10 +363,10 @@ func TestIsLocalDomain(t *testing.T) {
 		{"dev.test", true},
 		{"example.com", false},
 		{"sub.example.com", false},
-		{"127.0.0.1", true},    // Private IP
-		{"192.168.1.1", true},  // Private IP
-		{"10.0.0.1", true},     // Private IP
-		{"8.8.8.8", false},     // Public IP
+		{"127.0.0.1", true},   // Private IP
+		{"192.168.1.1", true}, // Private IP
+		{"10.0.0.1", true},    // Private IP
+		{"8.8.8.8", false},    // Public IP
 	}
 
 	for _, tc := range testCases {
@@ -409,7 +409,7 @@ func TestEnsureCertificate(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Set up a mock tunnel provider with active tunnels
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"test123"},
@@ -425,7 +425,7 @@ func TestEnsureCertificate(t *testing.T) {
 	// Check that certificate and key files were created for the subdomain
 	certPath := client.getSubdomainCertPath("test123")
 	keyPath := client.getSubdomainKeyPath("test123")
-	
+
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
 		t.Error("Expected certificate file to be created")
 	}
@@ -461,7 +461,7 @@ func TestGenerateSelfSignedCertificate(t *testing.T) {
 		t.Fatalf("Failed to read certificate: %v", err)
 	}
 
-	// Verify key file exists  
+	// Verify key file exists
 	keyBytes, err := os.ReadFile(cfg.ACMEKeyPath)
 	if err != nil {
 		t.Fatalf("Failed to read key: %v", err)
@@ -559,7 +559,7 @@ func TestNewClientWithCustomACMEDirectory(t *testing.T) {
 
 func TestObtainCertificateSkipped(t *testing.T) {
 	t.Skip("Skipping ObtainCertificate test that requires ACME server interaction")
-	
+
 	// Test would verify certificate obtaining logic, but requires real ACME server
 	tempDir, err := os.MkdirTemp("", "acme-test")
 	if err != nil {
@@ -597,10 +597,10 @@ func TestHTTP01ProviderErrors(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 	tempFile.Close()
-	
+
 	// Try to create directory where file already exists (should fail)
 	provider := &HTTP01Provider{challengeDir: tempFile.Name()}
-	
+
 	domain := "example.com"
 	token := "test-token"
 	keyAuth := "test-key-auth"
@@ -658,7 +658,7 @@ func TestCheckCertificateErrorPaths(t *testing.T) {
 
 func TestEnsureCertificatePublicDomain(t *testing.T) {
 	t.Skip("Skipping public domain test that requires ACME server interaction")
-	
+
 	tempDir, err := os.MkdirTemp("", "cert-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -685,7 +685,7 @@ func TestEnsureCertificatePublicDomain(t *testing.T) {
 
 	ctx := context.Background()
 	err = client.EnsureCertificate(ctx)
-	
+
 	// We expect this to fail in test environment since we don't have a real ACME server
 	// but the important thing is that it attempts the ACME path, not self-signed
 	if err == nil {
@@ -721,7 +721,7 @@ func TestGenerateSelfSignedCertificateRobustness(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Test with multiple IP addresses
 	domains := []string{"localhost", "192.168.1.100", "10.0.0.1"}
 	err = client.GenerateSelfSignedCertificate(domains)
@@ -792,7 +792,7 @@ func TestCheckCertificateReadError(t *testing.T) {
 
 func TestEnsureCertificateForceACMELocal(t *testing.T) {
 	t.Skip("Skipping test that requires ACME client initialization")
-	
+
 	tempDir, err := os.MkdirTemp("", "cert-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -818,7 +818,7 @@ func TestEnsureCertificateForceACMELocal(t *testing.T) {
 
 	ctx := context.Background()
 	err = client.EnsureCertificate(ctx)
-	
+
 	// Should attempt ACME (not self-signed) even for local domain due to force flag
 	// Will fail without real ACME server, but tests the code path
 	if err == nil {
@@ -839,14 +839,14 @@ func TestGenerateSelfSignedCertificateEdgeCases(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Test with no domains
 	err = client.GenerateSelfSignedCertificate([]string{})
 	if err != nil {
 		t.Fatalf("Failed to generate certificate with no domains: %v", err)
 	}
 
-	// Test with only IP addresses  
+	// Test with only IP addresses
 	err = client.GenerateSelfSignedCertificate([]string{"192.168.1.1", "10.0.0.1"})
 	if err != nil {
 		t.Fatalf("Failed to generate certificate with only IPs: %v", err)
@@ -876,7 +876,7 @@ func TestGenerateSelfSignedCertificateEdgeCases(t *testing.T) {
 
 func TestEnsureCertificateWithMixedDomains(t *testing.T) {
 	t.Skip("Skipping test that requires ACME client initialization")
-	
+
 	tempDir, err := os.MkdirTemp("", "cert-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -903,7 +903,7 @@ func TestEnsureCertificateWithMixedDomains(t *testing.T) {
 	// This tests the priority logic: public domains take precedence over local
 	ctx := context.Background()
 	err = client.EnsureCertificate(ctx)
-	
+
 	// Should attempt ACME for public domain, fail without real server
 	if err == nil {
 		t.Error("Expected EnsureCertificate to fail for public domain without ACME server")
@@ -934,21 +934,21 @@ func TestSetTunnelProvider(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "example.com",
 	}
-	
+
 	client := &Client{config: cfg}
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"test123", "abc456"},
 	}
-	
+
 	client.SetTunnelProvider(mockProvider)
-	
+
 	domains := client.GetDomains()
 	expected := []string{"test123.example.com", "abc456.example.com"}
-	
+
 	if len(domains) != len(expected) {
 		t.Errorf("Expected %d domains, got %d", len(expected), len(domains))
 	}
-	
+
 	for i, domain := range domains {
 		if domain != expected[i] {
 			t.Errorf("Expected domain %s at index %d, got %s", expected[i], i, domain)
@@ -960,9 +960,9 @@ func TestGetDomainsWithoutTunnelProvider(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "example.com",
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	domains := client.GetDomains()
 	if len(domains) != 0 {
 		t.Errorf("Expected 0 domains without tunnel provider, got %d", len(domains))
@@ -975,23 +975,23 @@ func TestGetSubdomainCertificatePaths(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	certPath, keyPath := client.GetSubdomainCertificatePaths("test123")
-	
+
 	expectedCertPath := filepath.Join(tempDir, "test123.crt")
 	expectedKeyPath := filepath.Join(tempDir, "test123.key")
-	
+
 	if certPath != expectedCertPath {
 		t.Errorf("Expected cert path %s, got %s", expectedCertPath, certPath)
 	}
-	
+
 	if keyPath != expectedKeyPath {
 		t.Errorf("Expected key path %s, got %s", expectedKeyPath, keyPath)
 	}
@@ -1003,16 +1003,16 @@ func TestCheckSubdomainCertificate(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:          "example.com",
 		ACMECertPath:    filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:     filepath.Join(tempDir, "key.pem"),
 		ACMERenewalDays: 30,
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Test with non-existent certificate
 	valid, err := client.CheckSubdomainCertificate("test123")
 	if err != nil {
@@ -1021,25 +1021,25 @@ func TestCheckSubdomainCertificate(t *testing.T) {
 	if valid {
 		t.Error("Expected non-existent certificate to be invalid")
 	}
-	
+
 	// Create a test certificate for the subdomain
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
-	
+
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(40 * 24 * time.Hour), // 40 days from now
 		DNSNames:     []string{"test123.example.com"},
 	}
-	
+
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
 	if err != nil {
 		t.Fatalf("Failed to create test certificate: %v", err)
 	}
-	
+
 	// Write certificate to subdomain-specific file
 	certPath := client.getSubdomainCertPath("test123")
 	certFile, err := os.Create(certPath)
@@ -1047,12 +1047,12 @@ func TestCheckSubdomainCertificate(t *testing.T) {
 		t.Fatalf("Failed to create cert file: %v", err)
 	}
 	defer certFile.Close()
-	
+
 	err = pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	if err != nil {
 		t.Fatalf("Failed to encode certificate: %v", err)
 	}
-	
+
 	// Test with valid certificate
 	valid, err = client.CheckSubdomainCertificate("test123")
 	if err != nil {
@@ -1061,7 +1061,7 @@ func TestCheckSubdomainCertificate(t *testing.T) {
 	if !valid {
 		t.Error("Expected valid certificate to be valid")
 	}
-	
+
 	// Test with certificate that expires soon
 	cfg.ACMERenewalDays = 50 // More than 40 days
 	valid, err = client.CheckSubdomainCertificate("test123")
@@ -1079,57 +1079,57 @@ func TestGenerateSubdomainSelfSignedCertificate(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:       "localhost",
 		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	err = client.GenerateSubdomainSelfSignedCertificate("test123")
 	if err != nil {
 		t.Fatalf("Failed to generate self-signed certificate: %v", err)
 	}
-	
+
 	// Verify certificate file exists
 	certPath := client.getSubdomainCertPath("test123")
 	certBytes, err := os.ReadFile(certPath)
 	if err != nil {
 		t.Fatalf("Failed to read certificate: %v", err)
 	}
-	
-	// Verify key file exists  
+
+	// Verify key file exists
 	keyPath := client.getSubdomainKeyPath("test123")
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
 		t.Fatalf("Failed to read key: %v", err)
 	}
-	
+
 	// Parse and verify certificate
 	certBlock, _ := pem.Decode(certBytes)
 	if certBlock == nil {
 		t.Fatal("Failed to decode certificate PEM")
 	}
-	
+
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
 		t.Fatalf("Failed to parse certificate: %v", err)
 	}
-	
+
 	// Verify certificate properties
 	expectedDomain := "test123.localhost"
 	if len(cert.DNSNames) != 1 || cert.DNSNames[0] != expectedDomain {
 		t.Errorf("Expected DNS name %s, got %v", expectedDomain, cert.DNSNames)
 	}
-	
+
 	// Parse and verify private key
 	keyBlock, _ := pem.Decode(keyBytes)
 	if keyBlock == nil {
 		t.Fatal("Failed to decode key PEM")
 	}
-	
+
 	_, err = x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
 		t.Fatalf("Failed to parse private key: %v", err)
@@ -1142,40 +1142,40 @@ func TestCleanupSubdomainCertificate(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:       "example.com",
 		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Create test certificate and key files
 	certPath := client.getSubdomainCertPath("test123")
 	keyPath := client.getSubdomainKeyPath("test123")
-	
+
 	err = os.WriteFile(certPath, []byte("test cert"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test cert file: %v", err)
 	}
-	
+
 	err = os.WriteFile(keyPath, []byte("test key"), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create test key file: %v", err)
 	}
-	
+
 	// Cleanup certificate
 	err = client.CleanupSubdomainCertificate("test123")
 	if err != nil {
 		t.Errorf("CleanupSubdomainCertificate should not fail: %v", err)
 	}
-	
+
 	// Verify files are removed
 	if _, err := os.Stat(certPath); !os.IsNotExist(err) {
 		t.Error("Expected certificate file to be removed")
 	}
-	
+
 	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
 		t.Error("Expected key file to be removed")
 	}
@@ -1187,7 +1187,7 @@ func TestEnsureSubdomainCertificate(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:           "localhost", // Local domain - should generate self-signed cert
 		ACMEEmail:        "test@example.com",
@@ -1198,23 +1198,23 @@ func TestEnsureSubdomainCertificate(t *testing.T) {
 		ACMERenewalDays:  30,
 		ACMEForceLocal:   false,
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	ctx := context.Background()
 	err = client.EnsureSubdomainCertificate(ctx, "test123")
 	if err != nil {
 		t.Errorf("EnsureSubdomainCertificate should not fail for localhost domain: %v", err)
 	}
-	
+
 	// Check that certificate and key files were created
 	certPath := client.getSubdomainCertPath("test123")
 	keyPath := client.getSubdomainKeyPath("test123")
-	
+
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
 		t.Error("Expected certificate file to be created")
 	}
-	
+
 	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 		t.Error("Expected key file to be created")
 	}
@@ -1226,7 +1226,7 @@ func TestEnsureCertificatesForActiveTunnels(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:           "localhost",
 		ACMEEmail:        "test@example.com",
@@ -1237,28 +1237,28 @@ func TestEnsureCertificatesForActiveTunnels(t *testing.T) {
 		ACMERenewalDays:  30,
 		ACMEForceLocal:   false,
 	}
-	
+
 	client := &Client{config: cfg}
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"tunnel1", "tunnel2"},
 	}
 	client.SetTunnelProvider(mockProvider)
-	
+
 	ctx := context.Background()
 	err = client.EnsureCertificatesForActiveTunnels(ctx)
 	if err != nil {
 		t.Errorf("EnsureCertificatesForActiveTunnels should not fail: %v", err)
 	}
-	
+
 	// Check that certificate files were created for both tunnels
 	for _, subdomain := range []string{"tunnel1", "tunnel2"} {
 		certPath := client.getSubdomainCertPath(subdomain)
 		keyPath := client.getSubdomainKeyPath(subdomain)
-		
+
 		if _, err := os.Stat(certPath); os.IsNotExist(err) {
 			t.Errorf("Expected certificate file for %s to be created", subdomain)
 		}
-		
+
 		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 			t.Errorf("Expected key file for %s to be created", subdomain)
 		}
@@ -1271,23 +1271,23 @@ func TestCheckSubdomainCertificateErrorPaths(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:          "example.com",
 		ACMECertPath:    filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:     filepath.Join(tempDir, "key.pem"),
 		ACMERenewalDays: 30,
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Test with directory instead of file (read error)
 	certPath := client.getSubdomainCertPath("error-test")
 	err = os.MkdirAll(certPath, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
-	
+
 	valid, err := client.CheckSubdomainCertificate("error-test")
 	if err == nil {
 		t.Error("Expected error when reading directory as certificate file")
@@ -1295,14 +1295,14 @@ func TestCheckSubdomainCertificateErrorPaths(t *testing.T) {
 	if valid {
 		t.Error("Expected invalid certificate when read fails")
 	}
-	
+
 	// Test with invalid PEM data
 	invalidCertPath := client.getSubdomainCertPath("invalid-pem")
 	err = os.WriteFile(invalidCertPath, []byte("invalid pem data"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write invalid cert: %v", err)
 	}
-	
+
 	valid, err = client.CheckSubdomainCertificate("invalid-pem")
 	if err != nil {
 		t.Errorf("CheckSubdomainCertificate should handle invalid PEM gracefully: %v", err)
@@ -1310,7 +1310,7 @@ func TestCheckSubdomainCertificateErrorPaths(t *testing.T) {
 	if valid {
 		t.Error("Expected invalid PEM to be considered invalid")
 	}
-	
+
 	// Test with malformed certificate in PEM
 	pemWithBadCert := `-----BEGIN CERTIFICATE-----
 invalid certificate data
@@ -1320,7 +1320,7 @@ invalid certificate data
 	if err != nil {
 		t.Fatalf("Failed to write malformed cert: %v", err)
 	}
-	
+
 	valid, err = client.CheckSubdomainCertificate("malformed")
 	if err != nil {
 		t.Errorf("CheckSubdomainCertificate should handle malformed cert gracefully: %v", err)
@@ -1336,7 +1336,7 @@ func TestEnsureSubdomainCertificateErrorPaths(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:           "localhost", // Use local domain to avoid ACME client issues
 		ACMEEmail:        "test@example.com",
@@ -1347,16 +1347,16 @@ func TestEnsureSubdomainCertificateErrorPaths(t *testing.T) {
 		ACMERenewalDays:  30,
 		ACMEForceLocal:   false,
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Test with empty subdomain - should be handled as invalid
 	ctx := context.Background()
 	err = client.EnsureSubdomainCertificate(ctx, "")
 	if err != nil {
 		t.Errorf("EnsureSubdomainCertificate should handle empty subdomain gracefully: %v", err)
 	}
-	
+
 	// With empty subdomain, full domain will be ".localhost" which should be invalid
 	// But the current implementation still creates certificate - this is the actual behavior
 	certPath := client.getSubdomainCertPath("")
@@ -1374,16 +1374,16 @@ func TestGenerateSubdomainSelfSignedCertificateErrorPaths(t *testing.T) {
 		ACMECertPath: "/nonexistent/path/cert.pem",
 		ACMEKeyPath:  "/nonexistent/path/key.pem",
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	err := client.GenerateSubdomainSelfSignedCertificate("test123")
 	if err == nil {
 		// The implementation appears to create directories as needed
 		// This is actually robust behavior - check if files were created
 		certPath := client.getSubdomainCertPath("test123")
 		keyPath := client.getSubdomainKeyPath("test123")
-		
+
 		// If files were created in unexpected locations, that's the actual behavior
 		if _, certErr := os.Stat(certPath); certErr == nil {
 			t.Log("Certificate was created (implementation creates directories as needed)")
@@ -1391,7 +1391,7 @@ func TestGenerateSubdomainSelfSignedCertificateErrorPaths(t *testing.T) {
 		if _, keyErr := os.Stat(keyPath); keyErr == nil {
 			t.Log("Key was created (implementation creates directories as needed)")
 		}
-		
+
 		// This test documents current behavior rather than enforcing strict error handling
 		t.Log("Implementation handles directory creation gracefully")
 	} else {
@@ -1406,15 +1406,15 @@ func TestCleanupSubdomainCertificateNonExistentFiles(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:       "example.com",
 		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Test cleanup with non-existent files (should not error)
 	err = client.CleanupSubdomainCertificate("nonexistent")
 	if err != nil {
@@ -1426,10 +1426,10 @@ func TestEnsureCertificatesForActiveTunnelsNoProvider(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "example.com",
 	}
-	
+
 	client := &Client{config: cfg}
 	// No tunnel provider set
-	
+
 	ctx := context.Background()
 	err := client.EnsureCertificatesForActiveTunnels(ctx)
 	if err != nil {
@@ -1441,13 +1441,13 @@ func TestEnsureCertificatesForActiveTunnelsNoTunnels(t *testing.T) {
 	cfg := &config.Config{
 		Domain: "example.com",
 	}
-	
+
 	client := &Client{config: cfg}
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{}, // No active tunnels
 	}
 	client.SetTunnelProvider(mockProvider)
-	
+
 	ctx := context.Background()
 	err := client.EnsureCertificatesForActiveTunnels(ctx)
 	if err != nil {
@@ -1463,14 +1463,14 @@ func TestGenerateSelfSignedCertificateDirectoryCreationError(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 	tempFile.Close()
-	
+
 	cfg := &config.Config{
 		ACMECertPath: filepath.Join(tempFile.Name(), "cert.pem"), // File where directory should be
 		ACMEKeyPath:  filepath.Join(tempFile.Name(), "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	err = client.GenerateSelfSignedCertificate([]string{"localhost"})
 	if err == nil {
 		t.Error("Expected error when trying to create directory where file exists")
@@ -1485,15 +1485,15 @@ func TestGenerateSubdomainSelfSignedCertificateDirectoryError(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 	tempFile.Close()
-	
+
 	cfg := &config.Config{
 		Domain:       "localhost",
 		ACMECertPath: filepath.Join(tempFile.Name(), "cert.pem"), // File where directory should be
 		ACMEKeyPath:  filepath.Join(tempFile.Name(), "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	err = client.GenerateSubdomainSelfSignedCertificate("test123")
 	if err == nil {
 		t.Error("Expected error when trying to create directory where file exists")
@@ -1508,9 +1508,9 @@ func TestHTTP01ProviderDirectoryError(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 	tempFile.Close()
-	
+
 	provider := &HTTP01Provider{challengeDir: tempFile.Name()}
-	
+
 	err = provider.Present("example.com", "test-token", "test-key-auth")
 	if err == nil {
 		t.Error("Expected Present to fail when trying to create directory where file exists")
@@ -1521,45 +1521,45 @@ func TestCleanupSubdomainCertificatePermissionError(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("Skipping permission test when running as root")
 	}
-	
+
 	tempDir, err := os.MkdirTemp("", "cert-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:       "example.com",
 		ACMECertPath: filepath.Join(tempDir, "cert.pem"),
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}
-	
+
 	client := &Client{config: cfg}
-	
+
 	// Create test certificate file with restricted permissions
 	certPath := client.getSubdomainCertPath("test123")
 	err = os.WriteFile(certPath, []byte("test cert"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test cert file: %v", err)
 	}
-	
+
 	// Make parent directory read-only to simulate permission error
 	certDir := filepath.Dir(certPath)
 	originalMode, err := os.Stat(certDir)
 	if err != nil {
 		t.Fatalf("Failed to get directory mode: %v", err)
 	}
-	
+
 	err = os.Chmod(certDir, 0444) // Read-only
 	if err != nil {
 		t.Fatalf("Failed to change directory permissions: %v", err)
 	}
-	
+
 	// Restore permissions after test
 	defer func() {
 		os.Chmod(certDir, originalMode.Mode())
 	}()
-	
+
 	// Cleanup should handle permission errors gracefully (just log, not fail)
 	err = client.CleanupSubdomainCertificate("test123")
 	if err != nil {
@@ -1573,7 +1573,7 @@ func TestEnsureSubdomainCertificateWithInvalidDomain(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:           "localhost", // Use localhost to avoid ACME client issues
 		ACMEEmail:        "test@example.com",
@@ -1584,18 +1584,18 @@ func TestEnsureSubdomainCertificateWithInvalidDomain(t *testing.T) {
 		ACMERenewalDays:  30,
 		ACMEForceLocal:   false,
 	}
-	
+
 	// Create client without ACME client to avoid nil pointer issues
 	client := &Client{config: cfg}
-	
+
 	// Test with a subdomain that makes an invalid full domain
 	ctx := context.Background()
 	err = client.EnsureSubdomainCertificate(ctx, "test123")
 	if err != nil {
 		t.Errorf("EnsureSubdomainCertificate should handle domain gracefully: %v", err)
 	}
-	
-	// Check if certificate was created 
+
+	// Check if certificate was created
 	certPath := client.getSubdomainCertPath("test123")
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
 		t.Log("No certificate created (expected for some domains)")
@@ -1610,7 +1610,7 @@ func TestEnsureCertificatesWithPartialFailure(t *testing.T) {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	cfg := &config.Config{
 		Domain:           "localhost",
 		ACMEEmail:        "test@example.com",
@@ -1621,13 +1621,13 @@ func TestEnsureCertificatesWithPartialFailure(t *testing.T) {
 		ACMERenewalDays:  30,
 		ACMEForceLocal:   false,
 	}
-	
+
 	client := &Client{config: cfg}
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"tunnel1", "tunnel2"},
 	}
 	client.SetTunnelProvider(mockProvider)
-	
+
 	ctx := context.Background()
 	// Should not fail even if individual certificate generation fails
 	err = client.EnsureCertificatesForActiveTunnels(ctx)
@@ -1673,7 +1673,7 @@ func TestACMEClientGetRateLimitStatus(t *testing.T) {
 	if environment, exists := status["environment"]; !exists || environment != "staging" {
 		t.Errorf("Expected status to contain 'environment': 'staging', got: %v", environment)
 	}
-	
+
 	if limits, exists := status["limits"]; !exists || limits != "none" {
 		t.Errorf("Expected status to contain 'limits': 'none', got: %v", limits)
 	}
@@ -1749,7 +1749,7 @@ func TestObtainSubdomainCertificateLogic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create ACME client: %v", err)
 	}
-	
+
 	err = client.ObtainSubdomainCertificate(ctx, "test123")
 	if err != nil {
 		t.Logf("Certificate obtainment failed as expected without real ACME server: %v", err)
@@ -1782,7 +1782,7 @@ func TestObtainCertificateLogic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create ACME client: %v", err)
 	}
-	
+
 	domains := []string{"test.example.com", "api.example.com"}
 	err = client.ObtainCertificate(ctx, domains)
 	if err != nil {
@@ -2016,23 +2016,23 @@ func TestCleanupSubdomainCertificateAdditionalScenarios(t *testing.T) {
 
 	// Test cleanup of multiple subdomains
 	subdomains := []string{"test1", "test2", "test3"}
-	
+
 	// Create test certificate and key files for each subdomain
 	for _, subdomain := range subdomains {
 		certPath := client.getSubdomainCertPath(subdomain)
 		keyPath := client.getSubdomainKeyPath(subdomain)
-		
+
 		// Ensure directories exist
 		err = os.MkdirAll(filepath.Dir(certPath), 0755)
 		if err != nil {
 			t.Fatalf("Failed to create cert directory: %v", err)
 		}
-		
+
 		err = os.WriteFile(certPath, []byte("test cert"), 0644)
 		if err != nil {
 			t.Fatalf("Failed to create test cert file: %v", err)
 		}
-		
+
 		err = os.WriteFile(keyPath, []byte("test key"), 0600)
 		if err != nil {
 			t.Fatalf("Failed to create test key file: %v", err)
@@ -2049,7 +2049,7 @@ func TestCleanupSubdomainCertificateAdditionalScenarios(t *testing.T) {
 		// Verify files are removed
 		certPath := client.getSubdomainCertPath(subdomain)
 		keyPath := client.getSubdomainKeyPath(subdomain)
-		
+
 		if _, err := os.Stat(certPath); !os.IsNotExist(err) {
 			t.Errorf("Expected certificate file to be removed for subdomain %s", subdomain)
 		}
@@ -2099,7 +2099,7 @@ func TestNewClientWithInvalidConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Call NewClient - should exercise the function even if it errors
 			client, err := NewClient(tc.config)
-			
+
 			// We expect these to fail, but the important thing is that
 			// we exercise the NewClient function code paths
 			if err != nil {
@@ -2118,7 +2118,7 @@ func TestObtainCertificateIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Test ObtainCertificate function - will likely fail but exercises the code
 	tempDir, err := os.MkdirTemp("", "acme-test")
 	if err != nil {
@@ -2165,7 +2165,7 @@ func TestObtainSubdomainCertificateIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Test ObtainSubdomainCertificate function - exercises the code even if it fails
 	tempDir, err := os.MkdirTemp("", "acme-test")
 	if err != nil {
@@ -2174,7 +2174,7 @@ func TestObtainSubdomainCertificateIntegration(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	cfg := &config.Config{
-		Domain:           "test-domain.com",  // Use a different domain to potentially avoid blacklist
+		Domain:           "test-domain.com", // Use a different domain to potentially avoid blacklist
 		ACMEEmail:        "test@test-domain.com",
 		ACMEStaging:      true,
 		ACMECertPath:     filepath.Join(tempDir, "cert.pem"),
@@ -2190,7 +2190,7 @@ func TestObtainSubdomainCertificateIntegration(t *testing.T) {
 		t.Logf("NewClient failed as expected: %v", err)
 		return
 	}
-	
+
 	// If client creation succeeded, test ObtainSubdomainCertificate
 	ctx := context.Background()
 	err = client.ObtainSubdomainCertificate(ctx, "test123")
@@ -2201,7 +2201,7 @@ func TestObtainSubdomainCertificateIntegration(t *testing.T) {
 		// Unexpected success - verify certificate was created
 		subdomainCertPath := client.getSubdomainCertPath("test123")
 		subdomainKeyPath := client.getSubdomainKeyPath("test123")
-		
+
 		if _, err := os.Stat(subdomainCertPath); os.IsNotExist(err) {
 			t.Error("Expected subdomain certificate file to be created")
 		}
@@ -2215,7 +2215,7 @@ func TestObtainSubdomainCertificateWithWorkingClient(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-	
+
 	// Test ObtainSubdomainCertificate with an actual working client that will connect
 	// This will exercise the function even if it ultimately fails
 	tempDir, err := os.MkdirTemp("", "acme-test")
@@ -2225,7 +2225,7 @@ func TestObtainSubdomainCertificateWithWorkingClient(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	cfg := &config.Config{
-		Domain:           "successful-test.com",  // Different domain
+		Domain:           "successful-test.com", // Different domain
 		ACMEEmail:        "testing@successful-test.com",
 		ACMEStaging:      true,
 		ACMECertPath:     filepath.Join(tempDir, "cert.pem"),
@@ -2240,11 +2240,11 @@ func TestObtainSubdomainCertificateWithWorkingClient(t *testing.T) {
 		t.Logf("NewClient failed, still exercised code: %v", err)
 		return
 	}
-	
+
 	// Now test ObtainSubdomainCertificate - this should exercise the function
 	ctx := context.Background()
 	err = client.ObtainSubdomainCertificate(ctx, "api")
-	
+
 	// We expect this to fail because we don't control the domain
 	// but it should have exercised the ObtainSubdomainCertificate function
 	if err != nil {
@@ -2253,7 +2253,7 @@ func TestObtainSubdomainCertificateWithWorkingClient(t *testing.T) {
 		// Unexpected success - verify the results
 		subdomainCertPath := client.getSubdomainCertPath("api")
 		subdomainKeyPath := client.getSubdomainKeyPath("api")
-		
+
 		if _, err := os.Stat(subdomainCertPath); os.IsNotExist(err) {
 			t.Error("Expected subdomain certificate file to be created")
 		}
@@ -2270,14 +2270,14 @@ func setupPebbleServer(t *testing.T) (serverURL string, cleanup func()) {
 	// In a real integration test environment, this would start an actual Pebble server
 	port := "14000"
 	pebbleURL := fmt.Sprintf("https://localhost:%s/dir", port)
-	
+
 	// Mock the server for testing purposes
 	// Real implementation would start pebble server here
-	
+
 	cleanup = func() {
 		// Cleanup would stop the Pebble server
 	}
-	
+
 	return pebbleURL, cleanup
 }
 
@@ -2287,7 +2287,7 @@ func setupChallengeServer(t *testing.T) (*challtestsrv.ChallSrv, func()) {
 	cleanup := func() {
 		// Cleanup function
 	}
-	
+
 	return nil, cleanup
 }
 
@@ -2321,7 +2321,7 @@ func TestPeriodicRenewalProcess(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Mock tunnel provider with some active tunnels
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"tunnel1", "tunnel2"},
@@ -2369,7 +2369,7 @@ func TestPeriodicRenewalWithExpiringCertificates(t *testing.T) {
 	}
 
 	client := &Client{config: cfg}
-	
+
 	// Mock tunnel provider
 	mockProvider := &MockTunnelProvider{
 		subdomains: []string{"expiring-tunnel"},

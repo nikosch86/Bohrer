@@ -25,11 +25,8 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 
 #### Installation
 
-1. **Clone and configure:**
+1. **Configure:**
    ```bash
-   git clone https://github.com/your-org/bohrer-go.git
-   cd bohrer-go
-   
    # Configure your domain
    export DOMAIN=your-domain.com
    export ACME_EMAIL=your-email@domain.com
@@ -640,12 +637,6 @@ open coverage.html
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/your-org/bohrer-go/issues)
-- **Documentation**: This README and [CLAUDE.md](CLAUDE.md)
-- **Development**: See [CLAUDE.md](CLAUDE.md) for development guidelines
 
 ---
 

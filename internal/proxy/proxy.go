@@ -118,7 +118,7 @@ func (p *Proxy) ServeHTTPS(w http.ResponseWriter, r *http.Request) {
 			p.webui.ServeHTTP(w, r)
 			return
 		}
-		
+
 		// Fallback to simple message if no WebUI
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `

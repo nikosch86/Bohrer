@@ -26,7 +26,7 @@ func TestFileUserStore_CreateAndRetrieveUser(t *testing.T) {
 	// Test creating a user
 	username := "testuser"
 	password := "testpassword123"
-	
+
 	err = store.CreateUser(username, password)
 	if err != nil {
 		t.Fatalf("Failed to create user: %v", err)

@@ -65,11 +65,11 @@ func logf(level LogLevel, format string, args ...interface{}) {
 	if level < currentLevel {
 		return
 	}
-	
+
 	message := fmt.Sprintf(format, args...)
 	levelName := levelNames[level]
 	log.Printf("[%s] %s", levelName, message)
-	
+
 	if level == FATAL {
 		os.Exit(1)
 	}

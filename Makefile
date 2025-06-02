@@ -1,38 +1,52 @@
-.PHONY: test test-verbose test-quick test-pkg test-run test-match test-webui test-ssh test-proxy test-acme test-config test-certs test-logger build clean deps dev-up dev-down coverage coverage-check e2e lint fmt security deadcode build-tools all ci validate help
+.PHONY: test test-verbose test-quick test-pkg test-run test-match test-webui test-ssh test-proxy test-acme test-config test-certs test-logger build clean deps dev-up dev-down coverage coverage-check e2e lint fmt security deadcode build-tools all ci validate help check-go-version
 
 # Use bash instead of sh for better compatibility
 SHELL := /bin/bash
 
 # Variables for consistency
-GO_VERSION := 1.23
+REQUIRED_GO_VERSION := 1.23
 DOCKER_COMPOSE_E2E := docker-compose.e2e.yml
 COVERAGE_THRESHOLD := 85
 TEST_TIMEOUT := 60s
 E2E_TIMEOUT := 60s
-TOOLS_IMAGE := bohrer-go-tools
 
-# Common Docker run command for Go operations
+# Check if go is installed and has the correct version
+GO_VERSION_CHECK := $(shell go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | sed 's/go//')
+GO_MAJOR := $(shell echo $(GO_VERSION_CHECK) | cut -d. -f1)
+GO_MINOR := $(shell echo $(GO_VERSION_CHECK) | cut -d. -f2)
+REQUIRED_MAJOR := $(shell echo $(REQUIRED_GO_VERSION) | cut -d. -f1)
+REQUIRED_MINOR := $(shell echo $(REQUIRED_GO_VERSION) | cut -d. -f2)
+
+# Docker commands only for e2e tests
 DOCKER_GO_RUN := docker run --rm -v $(PWD):/app -v go-mod-cache:/go/pkg/mod -v go-build-cache:/root/.cache/go-build -w /app
-DOCKER_GO_ALPINE := $(DOCKER_GO_RUN) golang:$(GO_VERSION)-alpine
-DOCKER_GO_FULL := $(DOCKER_GO_RUN) -e CGO_ENABLED=1 golang:$(GO_VERSION)
-DOCKER_TOOLS := $(DOCKER_GO_RUN) $(TOOLS_IMAGE)
+DOCKER_GO_E2E := $(DOCKER_GO_RUN) -e CGO_ENABLED=1 golang:$(REQUIRED_GO_VERSION)
 
 # Default target
-all: build-tools clean deps test coverage-check lint security deadcode
+all: check-go-version clean deps test coverage-check lint
 
-# CI/CD target
-ci: build-tools deps test coverage-check lint security deadcode e2e
+# CI/CD target (uses docker for everything)
+ci: deps test coverage-check lint e2e
 
-# Build tools container with all development tools pre-installed
-build-tools:
-	@echo "🔧 Building tools container..."
-	docker build -f Dockerfile.tools -t $(TOOLS_IMAGE) .
-	@echo "✅ Tools container built"
+# Check Go version
+check-go-version:
+	@if [ -z "$(GO_VERSION_CHECK)" ]; then \
+		echo "❌ Go is not installed. Please install Go $(REQUIRED_GO_VERSION) or later"; \
+		echo "   Visit https://golang.org/dl/ to download"; \
+		exit 1; \
+	fi
+	@if [ "$(GO_MAJOR)" -lt "$(REQUIRED_MAJOR)" ] || \
+	   ([ "$(GO_MAJOR)" -eq "$(REQUIRED_MAJOR)" ] && [ "$(GO_MINOR)" -lt "$(REQUIRED_MINOR)" ]); then \
+		echo "❌ Go version $(GO_VERSION_CHECK) is too old. Required: $(REQUIRED_GO_VERSION) or later"; \
+		echo "   Current: $(GO_VERSION_CHECK)"; \
+		echo "   Visit https://golang.org/dl/ to download"; \
+		exit 1; \
+	fi
+	@echo "✅ Go version $(GO_VERSION_CHECK) meets requirement (>= $(REQUIRED_GO_VERSION))"
 
-deps:
+deps: check-go-version
 	@echo "📦 Downloading dependencies..."
-	$(DOCKER_GO_ALPINE) go mod tidy
-	$(DOCKER_GO_ALPINE) go mod download
+	go mod tidy
+	go mod download
 	@echo "✅ Dependencies updated"
 
 build:
@@ -40,22 +54,22 @@ build:
 	docker compose build
 
 # Quick test without race detection for faster development
-test-quick:
+test-quick: check-go-version
 	@echo "⚡ Running quick tests..."
-	$(DOCKER_GO_FULL) go test -short -coverprofile=coverage.out ./...
+	go test -short -coverprofile=coverage.out ./...
 	@echo "✅ Quick tests complete"
 
-test:
+test: check-go-version
 	@echo "🧪 Running tests (failures only)..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -coverprofile=coverage.out ./... 2>&1 | grep -E "(FAIL|^FAIL|^\?\?\?|--- FAIL|coverage:|^ok )" || true
+	@go test -v -race -timeout=$(TEST_TIMEOUT) -coverprofile=coverage.out ./... 2>&1 | grep -E "(FAIL|^FAIL|^\?\?\?|--- FAIL|coverage:|^ok )" || true
 	@echo "✅ Test run complete. Use 'make test-verbose' for full output."
 
-test-verbose:
+test-verbose: check-go-version
 	@echo "🧪 Running verbose tests..."
-	$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -coverprofile=coverage.out ./...
+	go test -v -race -timeout=$(TEST_TIMEOUT) -coverprofile=coverage.out ./...
 
 # Selective testing targets
-test-pkg:
+test-pkg: check-go-version
 	@if [ -z "$(PKG)" ]; then \
 		echo "❌ Usage: make test-pkg PKG=<package>"; \
 		echo "   Example: make test-pkg PKG=./internal/webui"; \
@@ -63,9 +77,9 @@ test-pkg:
 		exit 1; \
 	fi
 	@echo "🧪 Running tests for package(s): $(PKG)..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) $(shell echo $(PKG) | tr ',' ' ')
+	@go test -v -race -timeout=$(TEST_TIMEOUT) $(shell echo $(PKG) | tr ',' ' ')
 
-test-run:
+test-run: check-go-version
 	@if [ -z "$(RUN)" ]; then \
 		echo "❌ Usage: make test-run RUN=<test_pattern> [PKG=<package>]"; \
 		echo "   Example: make test-run RUN=TestWebUIAuthentication"; \
@@ -73,9 +87,9 @@ test-run:
 		exit 1; \
 	fi
 	@echo "🧪 Running tests matching pattern: $(RUN) in $(if $(PKG),$(PKG),all packages)..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -run="$(RUN)" $(if $(PKG),$(PKG),./...)
+	@go test -v -race -timeout=$(TEST_TIMEOUT) -run="$(RUN)" $(if $(PKG),$(PKG),./...)
 
-test-match:
+test-match: check-go-version
 	@if [ -z "$(MATCH)" ]; then \
 		echo "❌ Usage: make test-match MATCH=<pattern> [PKG=<package>]"; \
 		echo "   Example: make test-match MATCH=Auth"; \
@@ -83,28 +97,28 @@ test-match:
 		exit 1; \
 	fi
 	@echo "🧪 Running tests containing pattern: $(MATCH) in $(if $(PKG),$(PKG),all packages)..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) -run=".*$(MATCH).*" $(if $(PKG),$(PKG),./...)
+	@go test -v -race -timeout=$(TEST_TIMEOUT) -run=".*$(MATCH).*" $(if $(PKG),$(PKG),./...)
 
 # Package-specific test shortcuts
-test-webui:
+test-webui: check-go-version
 	@echo "🌐 Running WebUI tests..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/webui
+	@go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/webui
 
-test-ssh:
+test-ssh: check-go-version
 	@echo "🔑 Running SSH tests..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/ssh
+	@go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/ssh
 
-test-proxy:
+test-proxy: check-go-version
 	@echo "🌐 Running Proxy tests..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/proxy
+	@go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/proxy
 
-test-acme:
+test-acme: check-go-version
 	@echo "🔒 Running ACME tests..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/acme
+	@go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/acme
 
-test-config:
+test-config: check-go-version
 	@echo "⚙️  Running Config tests..."
-	@$(DOCKER_GO_FULL) go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/config
+	@go test -v -race -timeout=$(TEST_TIMEOUT) ./internal/config
 
 test-certs:
 	@echo "📜 Running Certificates tests..."
@@ -142,22 +156,22 @@ fmt:
 	$(DOCKER_GO_ALPINE) go fmt ./...
 	@echo "✅ Code formatted"
 
-security: build-tools
+security: check-go-version
 	@echo "🔒 Running security checks..."
 	@echo "  🛡️  Running govulncheck for known vulnerabilities..."
-	$(DOCKER_TOOLS) govulncheck ./...
+	@which govulncheck > /dev/null 2>&1 && govulncheck ./... || echo "   govulncheck not installed, skipping"
 	@echo "✅ Security checks complete"
 
-deadcode: build-tools
+deadcode: check-go-version
 	@echo "🧹 Detecting dead code..."
-	$(DOCKER_TOOLS) deadcode -test ./...
+	@which deadcode > /dev/null 2>&1 && deadcode -test ./... || echo "   deadcode not installed, skipping"
 	@echo "✅ Dead code analysis complete"
 
 e2e:
 	@echo "🚀 Running end-to-end tests..."
 	@./test/e2e.sh
 
-validate: build-tools deps build test coverage-check lint security deadcode
+validate: deps build test coverage-check lint security deadcode
 	@echo "✅ All validation checks passed"
 
 dev-up:
@@ -191,12 +205,12 @@ help:
 	@echo "🚀 Bohrer-go Development Commands"
 	@echo ""
 	@echo "📋 Main Targets:"
-	@echo "  all          - Run complete validation pipeline (build-tools, clean, deps, test, coverage-check, lint, security, deadcode)"
-	@echo "  ci           - CI/CD pipeline (build-tools, deps, test, coverage-check, lint, security, deadcode, e2e-all)"
-	@echo "  validate     - Quick validation (build-tools, deps, build, test, coverage-check, lint, security, deadcode)"
+	@echo "  all          - Run complete validation pipeline (clean, deps, test, coverage-check, lint)"
+	@echo "  ci           - CI/CD pipeline (deps, test, coverage-check, lint, e2e)"
+	@echo "  validate     - Quick validation (deps, build, test, coverage-check, lint, security, deadcode)"
 	@echo ""
 	@echo "🏗️  Build & Dependencies:"
-	@echo "  build-tools  - Build development tools container (golangci-lint, govulncheck, deadcode)"
+	@echo "  check-go-version - Verify Go version meets requirements (>= $(REQUIRED_GO_VERSION))"
 	@echo "  deps         - Download and tidy Go dependencies"
 	@echo "  build        - Build all Docker images"
 	@echo ""
@@ -228,7 +242,7 @@ help:
 	@echo "  deadcode     - Detect unused code"
 	@echo ""
 	@echo "🌐 End-to-End Testing:"
-	@echo "  e2e          - Run complete E2E test suite"
+	@echo "  e2e          - Run complete E2E test suite (uses Docker)"
 	@echo ""
 	@echo "🔧 Development:"
 	@echo "  dev-up       - Start development environment"

@@ -34,7 +34,7 @@ func TestGenerateWildcardCertificate(t *testing.T) {
 		t.Fatalf("Failed to read certificate: %v", err)
 	}
 
-	// Verify key file exists  
+	// Verify key file exists
 	keyBytes, err := os.ReadFile(cfg.ACMEKeyPath)
 	if err != nil {
 		t.Fatalf("Failed to read key: %v", err)
@@ -177,7 +177,7 @@ func TestPermissionErrors(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Domain:       "test.local", 
+		Domain:       "test.local",
 		ACMECertPath: filepath.Join(invalidDir, "cert.pem"), // This should fail
 		ACMEKeyPath:  filepath.Join(tempDir, "key.pem"),
 	}

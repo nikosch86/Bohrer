@@ -42,18 +42,18 @@ func main() {
 
 	// Create and configure WebUI for management interface
 	webUI := webui.NewWebUI(cfg)
-	
+
 	// Create adapter to connect SSH server and proxy with WebUI
 	sshAdapter := webui.NewSSHServerAdapter(sshServer, proxyServer)
 	webUI.SetSSHTunnelProvider(sshAdapter)
-	
+
 	// Connect WebUI user store to SSH server for authentication (via adapter)
 	userStoreAdapter := webui.NewUserStoreAdapter(webUI.GetUserStore())
 	sshServer.SetUserStore(userStoreAdapter)
-	
+
 	// Connect WebUI SSH key store to SSH server for public key authentication
 	sshServer.SetSSHKeyStore(webUI.GetSSHKeyStore())
-	
+
 	// Set WebUI in proxy to serve on root domain
 	proxyServer.SetWebUI(webUI)
 
@@ -227,4 +227,3 @@ func displayConfig(cfg *config.Config) {
 	fmt.Println("=====================================")
 	fmt.Println()
 }
-

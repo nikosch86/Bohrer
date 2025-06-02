@@ -129,7 +129,7 @@ func (s *Server) RemoveTunnel(subdomain string) {
 		if tunnel.Listener != nil {
 			tunnel.Listener.Close()
 		}
-		
+
 		// Close all active connections
 		tunnel.ConnMutex.Lock()
 		for connID, conn := range tunnel.Connections {
@@ -218,7 +218,7 @@ func (s *Server) Start() error {
 				logger.Warnf("Authentication failed for user %s", c.User())
 				return nil, fmt.Errorf("password rejected for %q", c.User())
 			}
-			
+
 			// Fallback to hardcoded credentials if no user store
 			if c.User() == "tunnel" && string(pass) == "test123" {
 				logger.Infof("User %s authenticated with fallback credentials", c.User())
@@ -307,11 +307,10 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 				// Send any pending tunnel URLs to this new session
 				pendingURLs := s.pendingURLs[sshConn]
 				if len(pendingURLs) > 0 {
-						// Clear pending URLs since we're sending them now
+					// Clear pending URLs since we're sending them now
 					delete(s.pendingURLs, sshConn)
 				}
 				s.mutex.Unlock()
-
 
 				// Send pending URLs to the new session
 				for _, urlMessage := range pendingURLs {
@@ -357,7 +356,7 @@ func (s *Server) handleConnection(conn net.Conn, config *ssh.ServerConfig) {
 								delete(s.pendingURLs, sshConn)
 							}
 							s.mutex.Unlock()
-							} else {
+						} else {
 							s.mutex.Unlock()
 						}
 					}()
@@ -472,7 +471,7 @@ func (s *Server) authenticateWithKeyStore(c ssh.ConnMetadata, pubKey ssh.PublicK
 	// Split the content into individual keys
 	authorizedKeys := strings.Split(authorizedKeysContent, "\n")
 	clientKeyBytes := ssh.MarshalAuthorizedKey(pubKey)
-	
+
 	for _, authorizedKey := range authorizedKeys {
 		authorizedKey = strings.TrimSpace(authorizedKey)
 		if authorizedKey == "" || strings.HasPrefix(authorizedKey, "#") {
@@ -668,7 +667,7 @@ func (s *Server) startRemoteForwardListener(port int, sshConn ssh.Conn) net.List
 			go s.forwardConnectionThroughSSH(conn, sshConn, port)
 		}
 	}()
-	
+
 	return listener
 }
 
@@ -730,7 +729,6 @@ func (s *Server) sendTunnelURLsToSessions(conn ssh.Conn, httpURL, httpsURL strin
 	s.mutex.Lock()
 	sessions := s.sessions[conn]
 	sessionCount := len(sessions)
-
 
 	if sessionCount == 0 {
 		// Store the tunnel URL for when sessions become available
@@ -852,10 +850,10 @@ func generateSubdomain() string {
 
 	adjective := adjectives[mathrand.Intn(len(adjectives))]
 	noun := nouns[mathrand.Intn(len(nouns))]
-	
+
 	// Add a random number to ensure uniqueness in case of collisions
 	number := mathrand.Intn(100)
-	
+
 	return fmt.Sprintf("%s-%s-%d", adjective, noun, number)
 }
 

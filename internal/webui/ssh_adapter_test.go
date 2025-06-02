@@ -2,7 +2,7 @@ package webui
 
 import (
 	"testing"
-	
+
 	"bohrer-go/internal/config"
 )
 

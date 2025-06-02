@@ -89,4 +89,3 @@ func TestUserStorePasswordAuthentication(t *testing.T) {
 		t.Error("Expected user to be deleted")
 	}
 }
-
