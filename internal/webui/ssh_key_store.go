@@ -13,6 +13,40 @@ import (
 	"bohrer-go/internal/logger"
 )
 
+// ValidateSSHPublicKey validates an SSH public key format
+// This is a standalone function to avoid code duplication
+func ValidateSSHPublicKey(publicKey string) error {
+	// Trim whitespace
+	publicKey = strings.TrimSpace(publicKey)
+	
+	if publicKey == "" {
+		return fmt.Errorf("public key cannot be empty")
+	}
+
+	// Try to parse the public key
+	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey))
+	if err != nil {
+		return fmt.Errorf("invalid SSH public key format: %v", err)
+	}
+
+	return nil
+}
+
+// FormatAuthorizedKeysContent formats SSH keys for authorized_keys file
+// This is a standalone function to avoid code duplication
+func FormatAuthorizedKeysContent(keys []SSHKeyData) string {
+	var lines []string
+	for _, key := range keys {
+		// Format: public_key comment
+		line := strings.TrimSpace(key.PublicKey)
+		if key.Comment != "" {
+			line = fmt.Sprintf("%s %s", line, key.Comment)
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // SSHKeyStore interface for managing SSH public keys
 type SSHKeyStore interface {
 	AddKey(name, publicKey, comment string) error
@@ -129,20 +163,7 @@ func (s *FileSSHKeyStore) saveToFile() error {
 
 // ValidateKey validates an SSH public key format
 func (s *FileSSHKeyStore) ValidateKey(publicKey string) error {
-	// Trim whitespace
-	publicKey = strings.TrimSpace(publicKey)
-	
-	if publicKey == "" {
-		return fmt.Errorf("public key cannot be empty")
-	}
-
-	// Try to parse the public key
-	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey))
-	if err != nil {
-		return fmt.Errorf("invalid SSH public key format: %v", err)
-	}
-
-	return nil
+	return ValidateSSHPublicKey(publicKey)
 }
 
 // AddKey adds a new SSH public key
@@ -246,21 +267,11 @@ func (s *FileSSHKeyStore) GetAuthorizedKeysContent() string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	var lines []string
+	keys := make([]SSHKeyData, 0, len(s.keys))
 	for _, key := range s.keys {
-		// Format: public_key comment
-		line := key.PublicKey
-		if key.Comment != "" {
-			// If the key already has a comment at the end, use it
-			// Otherwise append our comment
-			if !strings.Contains(key.PublicKey, " ") || key.Comment != "" {
-				line = fmt.Sprintf("%s %s", strings.TrimSpace(key.PublicKey), key.Comment)
-			}
-		}
-		lines = append(lines, line)
+		keys = append(keys, key)
 	}
-
-	return strings.Join(lines, "\n")
+	return FormatAuthorizedKeysContent(keys)
 }
 
 // InMemorySSHKeyStore implements SSHKeyStore interface for testing
@@ -278,20 +289,7 @@ func NewInMemorySSHKeyStore() *InMemorySSHKeyStore {
 
 // ValidateKey validates an SSH public key format
 func (s *InMemorySSHKeyStore) ValidateKey(publicKey string) error {
-	// Trim whitespace
-	publicKey = strings.TrimSpace(publicKey)
-	
-	if publicKey == "" {
-		return fmt.Errorf("public key cannot be empty")
-	}
-
-	// Try to parse the public key
-	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKey))
-	if err != nil {
-		return fmt.Errorf("invalid SSH public key format: %v", err)
-	}
-
-	return nil
+	return ValidateSSHPublicKey(publicKey)
 }
 
 // AddKey adds a new SSH public key
@@ -376,17 +374,11 @@ func (s *InMemorySSHKeyStore) GetAuthorizedKeysContent() string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
-	var lines []string
+	keys := make([]SSHKeyData, 0, len(s.keys))
 	for _, key := range s.keys {
-		// Format: public_key comment
-		line := key.PublicKey
-		if key.Comment != "" {
-			line = fmt.Sprintf("%s %s", strings.TrimSpace(key.PublicKey), key.Comment)
-		}
-		lines = append(lines, line)
+		keys = append(keys, key)
 	}
-
-	return strings.Join(lines, "\n")
+	return FormatAuthorizedKeysContent(keys)
 }
 
 // NewSSHKeyStore creates an SSH key store based on configuration

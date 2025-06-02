@@ -5,19 +5,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
-
-// Valid test SSH keys
-const (
-	validRSAKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQJlMbPPckn2OGPx+z7rkrQF1nHB1BfmmHecBCYr7sL6ozZPZZnRrCNvyu5CL1JmE6Hm4t9K3hGauvgDw0hOzwz5/5OCD6R8ttKoAhekSs2kaLN3Q8pAIWknKKE6dlCJcqJo8mdOcgYUf4SQ3tafGmHXzvWMfWsMKdhH8A6R+RaYOn6KaxU7F9bPKg8QpNhKDQcw5ZgcKkjL9dYoTosXMxJ9ks9zPD3P2LLvV8rV3CdRnO0w3sboaVGmMEYPCU0Rzl1CVFLb/cOJmPNxK1xXfrDKTGDpIMAcr+xNnJwe7ClbADJxVtcBYrKKg3i1s5LZ7RE3pfmLfAOIhXMXJyVXsn test@example.com"
-	validED25519Key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl test@example.com"
+	
+	"bohrer-go/internal/testutil"
 )
 
 func TestInMemorySSHKeyStore(t *testing.T) {
 	store := NewInMemorySSHKeyStore()
 
 	// Test adding a valid SSH key
-	err := store.AddKey("test-key", validRSAKey, "Test comment")
+	err := store.AddKey("test-key", testutil.ValidRSAKey, "Test comment")
 	if err != nil {
 		t.Fatalf("Failed to add valid key: %v", err)
 	}
@@ -45,7 +41,7 @@ func TestInMemorySSHKeyStore(t *testing.T) {
 
 	// Test authorized keys content
 	content := store.GetAuthorizedKeysContent()
-	if !strings.Contains(content, validRSAKey) {
+	if !strings.Contains(content, testutil.ValidRSAKey) {
 		t.Error("Authorized keys content should contain the key")
 	}
 	if !strings.Contains(content, "Test comment") {
@@ -75,7 +71,7 @@ func TestInMemorySSHKeyStore_Validation(t *testing.T) {
 	store := NewInMemorySSHKeyStore()
 
 	// Test empty key name
-	err := store.AddKey("", validRSAKey, "comment")
+	err := store.AddKey("", testutil.ValidRSAKey, "comment")
 	if err == nil {
 		t.Error("Should fail with empty key name")
 	}
@@ -93,11 +89,11 @@ func TestInMemorySSHKeyStore_Validation(t *testing.T) {
 	}
 
 	// Test duplicate key name
-	err = store.AddKey("duplicate", validRSAKey, "comment1")
+	err = store.AddKey("duplicate", testutil.ValidRSAKey, "comment1")
 	if err != nil {
 		t.Fatalf("Failed to add first key: %v", err)
 	}
-	err = store.AddKey("duplicate", validRSAKey, "comment2")
+	err = store.AddKey("duplicate", testutil.ValidRSAKey, "comment2")
 	if err == nil {
 		t.Error("Should fail with duplicate key name")
 	}
@@ -113,12 +109,12 @@ func TestInMemorySSHKeyStore_ValidateKey(t *testing.T) {
 	}{
 		{
 			name:      "valid ssh-rsa key",
-			key:       validRSAKey,
+			key:       testutil.ValidRSAKey,
 			wantError: false,
 		},
 		{
 			name:      "valid ssh-ed25519 key",
-			key:       validED25519Key,
+			key:       testutil.ValidED25519Key,
 			wantError: false,
 		},
 		{
@@ -133,7 +129,7 @@ func TestInMemorySSHKeyStore_ValidateKey(t *testing.T) {
 		},
 		{
 			name:      "key with extra whitespace",
-			key:       "  " + validRSAKey + "  ",
+			key:       "  " + testutil.ValidRSAKey + "  ",
 			wantError: false,
 		},
 	}
@@ -160,7 +156,7 @@ func TestFileSSHKeyStore(t *testing.T) {
 	}
 
 	// Test adding a valid SSH key
-	err = store.AddKey("test-key", validRSAKey, "Test comment")
+	err = store.AddKey("test-key", testutil.ValidRSAKey, "Test comment")
 	if err != nil {
 		t.Fatalf("Failed to add valid key: %v", err)
 	}
@@ -193,7 +189,7 @@ func TestFileSSHKeyStore(t *testing.T) {
 
 	// Test authorized keys content
 	content := store2.GetAuthorizedKeysContent()
-	if !strings.Contains(content, validRSAKey) {
+	if !strings.Contains(content, testutil.ValidRSAKey) {
 		t.Error("Authorized keys content should contain the key")
 	}
 
@@ -300,8 +296,8 @@ func TestSSHKeyStore_AuthorizedKeysFormat(t *testing.T) {
 	store := NewInMemorySSHKeyStore()
 
 	// Add keys with different scenarios
-	store.AddKey("key1", validRSAKey, "Comment 1")
-	store.AddKey("key2", validED25519Key, "")  // No comment
+	store.AddKey("key1", testutil.ValidRSAKey, "Comment 1")
+	store.AddKey("key2", testutil.ValidED25519Key, "")  // No comment
 	
 	content := store.GetAuthorizedKeysContent()
 	lines := strings.Split(strings.TrimSpace(content), "\n")
@@ -316,7 +312,137 @@ func TestSSHKeyStore_AuthorizedKeysFormat(t *testing.T) {
 	}
 	
 	// Second key already has a comment in the key itself
-	if !strings.Contains(lines[1], validED25519Key) {
+	if !strings.Contains(lines[1], testutil.ValidED25519Key) {
 		t.Error("Second key should be present")
+	}
+}
+
+func TestFormatAuthorizedKeysContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		keys     []SSHKeyData
+		expected []string
+	}{
+		{
+			name: "key with comment",
+			keys: []SSHKeyData{
+				{PublicKey: testutil.ValidRSAKey, Comment: "my comment"},
+			},
+			expected: []string{
+				testutil.ValidRSAKey + " my comment",
+			},
+		},
+		{
+			name: "key without comment",
+			keys: []SSHKeyData{
+				{PublicKey: testutil.ValidRSAKey, Comment: ""},
+			},
+			expected: []string{
+				testutil.ValidRSAKey,
+			},
+		},
+		{
+			name: "key with whitespace",
+			keys: []SSHKeyData{
+				{PublicKey: "  " + testutil.ValidRSAKey + "  ", Comment: "trimmed"},
+			},
+			expected: []string{
+				testutil.ValidRSAKey + " trimmed",
+			},
+		},
+		{
+			name: "multiple keys",
+			keys: []SSHKeyData{
+				{PublicKey: testutil.ValidRSAKey, Comment: "key1"},
+				{PublicKey: testutil.ValidED25519Key, Comment: "key2"},
+			},
+			expected: []string{
+				testutil.ValidRSAKey + " key1",
+				testutil.ValidED25519Key + " key2",
+			},
+		},
+		{
+			name: "empty keys",
+			keys: []SSHKeyData{},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatAuthorizedKeysContent(tt.keys)
+			lines := strings.Split(strings.TrimSpace(result), "\n")
+			
+			// Handle empty case
+			if len(tt.expected) == 0 && result == "" {
+				return
+			}
+			
+			if len(lines) != len(tt.expected) {
+				t.Errorf("Expected %d lines, got %d", len(tt.expected), len(lines))
+				return
+			}
+			
+			for i, expected := range tt.expected {
+				if lines[i] != expected {
+					t.Errorf("Line %d: expected %q, got %q", i, expected, lines[i])
+				}
+			}
+		})
+	}
+}
+
+func TestValidateSSHPublicKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "valid ssh-rsa key",
+			key:       testutil.ValidRSAKey,
+			wantError: false,
+		},
+		{
+			name:      "valid ssh-ed25519 key",
+			key:       testutil.ValidED25519Key,
+			wantError: false,
+		},
+		{
+			name:      "empty key",
+			key:       "",
+			wantError: true,
+			errorMsg:  "public key cannot be empty",
+		},
+		{
+			name:      "invalid key format",
+			key:       "invalid-key-format",
+			wantError: true,
+			errorMsg:  "invalid SSH public key format",
+		},
+		{
+			name:      "key with extra whitespace",
+			key:       "  " + testutil.ValidRSAKey + "  ",
+			wantError: false,
+		},
+		{
+			name:      "whitespace only",
+			key:       "   \t\n  ",
+			wantError: true,
+			errorMsg:  "public key cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSSHPublicKey(tt.key)
+			if (err != nil) != tt.wantError {
+				t.Errorf("ValidateSSHPublicKey() error = %v, wantError %v", err, tt.wantError)
+			}
+			if err != nil && tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("ValidateSSHPublicKey() error = %v, want error containing %v", err, tt.errorMsg)
+			}
+		})
 	}
 }

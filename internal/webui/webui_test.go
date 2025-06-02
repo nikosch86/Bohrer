@@ -3,10 +3,12 @@ package webui
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/testutil"
 )
 
 func TestNewWebUI(t *testing.T) {
@@ -371,7 +373,7 @@ func TestHandleSSHKeys(t *testing.T) {
 	}
 
 	// Test POST request (create SSH key)
-	formData := strings.NewReader("name=test-key&public_key=ssh-rsa+AAAAB3NzaC1yc2EAAAADAQABAAABAQDQJlMbPPckn2OGPx%2Bz7rkrQF1nHB1BfmmHecBCYr7sL6ozZPZZnRrCNvyu5CL1JmE6Hm4t9K3hGauvgDw0hOzwz5%2F5OCD6R8ttKoAhekSs2kaLN3Q8pAIWknKKE6dlCJcqJo8mdOcgYUf4SQ3tafGmHXzvWMfWsMKdhH8A6R%2BRaYOn6KaxU7F9bPKg8QpNhKDQcw5ZgcKkjL9dYoTosXMxJ9ks9zPD3P2LLvV8rV3CdRnO0w3sboaVGmMEYPCU0Rzl1CVFLb%2FcOJmPNxK1xXfrDKTGDpIMAcr%2BxNnJwe7ClbADJxVtcBYrKKg3i1s5LZ7RE3pfmLfAOIhXMXJyVXsn+test%40example.com&comment=Test+comment")
+	formData := strings.NewReader("name=test-key&public_key=" + url.QueryEscape(testutil.ValidRSAKey) + "&comment=Test+comment")
 	req = httptest.NewRequest("POST", "/ssh-keys", formData)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr = httptest.NewRecorder()
@@ -397,7 +399,7 @@ func TestHandleDeleteSSHKey(t *testing.T) {
 	webui := NewWebUI(cfg)
 
 	// First add a key
-	webui.sshKeyStore.AddKey("test-key", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQJlMbPPckn2OGPx+z7rkrQF1nHB1BfmmHecBCYr7sL6ozZPZZnRrCNvyu5CL1JmE6Hm4t9K3hGauvgDw0hOzwz5/5OCD6R8ttKoAhekSs2kaLN3Q8pAIWknKKE6dlCJcqJo8mdOcgYUf4SQ3tafGmHXzvWMfWsMKdhH8A6R+RaYOn6KaxU7F9bPKg8QpNhKDQcw5ZgcKkjL9dYoTosXMxJ9ks9zPD3P2LLvV8rV3CdRnO0w3sboaVGmMEYPCU0Rzl1CVFLb/cOJmPNxK1xXfrDKTGDpIMAcr+xNnJwe7ClbADJxVtcBYrKKg3i1s5LZ7RE3pfmLfAOIhXMXJyVXsn test@example.com", "Test comment")
+	webui.sshKeyStore.AddKey("test-key", testutil.ValidRSAKey, "Test comment")
 
 	// Test DELETE request
 	req := httptest.NewRequest("DELETE", "/ssh-keys/test-key", nil)

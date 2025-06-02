@@ -9,7 +9,6 @@ import (
 	"html/template"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -251,8 +250,7 @@ func (w *WebUI) handleDashboard(rw http.ResponseWriter, r *http.Request) {
 
 // handleAPITunnels returns tunnel information as JSON for AJAX updates
 func (w *WebUI) handleAPITunnels(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(rw, r, "GET") {
 		return
 	}
 
@@ -260,8 +258,7 @@ func (w *WebUI) handleAPITunnels(rw http.ResponseWriter, r *http.Request) {
 	
 	rw.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(rw).Encode(tunnels); err != nil {
-		logger.Errorf("Failed to encode tunnels JSON: %v", err)
-		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
+		LogAndHTTPError(rw, "Failed to encode tunnels JSON: %v", err)
 	}
 }
 
@@ -279,14 +276,12 @@ func (w *WebUI) handleUsers(rw http.ResponseWriter, r *http.Request) {
 
 // handleDeleteUser handles user deletion
 func (w *WebUI) handleDeleteUser(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "DELETE" {
-		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(rw, r, "DELETE") {
 		return
 	}
 
-	username := path.Base(r.URL.Path)
-	if username == "" || username == "users" {
-		http.Error(rw, "Username required", http.StatusBadRequest)
+	username, err := ExtractPathParam(rw, r, "/users")
+	if err != nil {
 		return
 	}
 
@@ -332,18 +327,16 @@ func (w *WebUI) showUsersPage(rw http.ResponseWriter, r *http.Request) {
 
 // createUser creates a new SSH user
 func (w *WebUI) createUser(rw http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(rw, "Failed to parse form", http.StatusBadRequest)
+	if err := ParseFormData(rw, r); err != nil {
+		return
+	}
+
+	if err := RequireFormFields(rw, r, "username", "password"); err != nil {
 		return
 	}
 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
-
-	if username == "" || password == "" {
-		http.Error(rw, "Username and password required", http.StatusBadRequest)
-		return
-	}
 
 	if err := w.userStore.CreateUser(username, password); err != nil {
 		logger.Errorf("Failed to create user %s: %v", username, err)
@@ -376,14 +369,12 @@ func (w *WebUI) handleSSHKeys(rw http.ResponseWriter, r *http.Request) {
 
 // handleDeleteSSHKey handles SSH key deletion
 func (w *WebUI) handleDeleteSSHKey(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != "DELETE" {
-		http.Error(rw, "Method not allowed", http.StatusMethodNotAllowed)
+	if !RequireMethod(rw, r, "DELETE") {
 		return
 	}
 
-	keyName := path.Base(r.URL.Path)
-	if keyName == "" || keyName == "ssh-keys" {
-		http.Error(rw, "Key name required", http.StatusBadRequest)
+	keyName, err := ExtractPathParam(rw, r, "/ssh-keys")
+	if err != nil {
 		return
 	}
 
