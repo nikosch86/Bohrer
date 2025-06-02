@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"bohrer-go/internal/common"
 	"bohrer-go/internal/config"
 	"bohrer-go/internal/logger"
 	"golang.org/x/crypto/ssh"
@@ -605,15 +606,8 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 		httpsExternalPort = s.config.HTTPSPort
 	}
 
-	httpURL := fmt.Sprintf("http://%s.%s", subdomain, s.config.Domain)
-	if httpExternalPort != 80 {
-		httpURL = fmt.Sprintf("http://%s.%s:%d", subdomain, s.config.Domain, httpExternalPort)
-	}
-
-	httpsURL := fmt.Sprintf("https://%s.%s", subdomain, s.config.Domain)
-	if httpsExternalPort != 443 {
-		httpsURL = fmt.Sprintf("https://%s.%s:%d", subdomain, s.config.Domain, httpsExternalPort)
-	}
+	urlBuilder := common.NewURLBuilder(s.config.Domain)
+	httpURL, httpsURL := urlBuilder.BuildURLs(subdomain, httpExternalPort, httpsExternalPort)
 
 	logger.Infof("✅ Tunnel created: %s -> %s (port %d)", subdomain, tunnelTarget, assignedPort)
 	logger.Infof("🌐 HTTP:  %s", httpURL)
@@ -724,7 +718,7 @@ func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Con
 
 // sendTunnelURLsToSessions sends tunnel URL information to all active sessions for the given connection
 func (s *Server) sendTunnelURLsToSessions(conn ssh.Conn, httpURL, httpsURL string) {
-	tunnelMessage := fmt.Sprintf("\r\n🎉 Tunnel Created Successfully!\r\n🌐 HTTP URL:  %s\r\n🔒 HTTPS URL: %s\r\n\r\n💡 Your local service is now publicly accessible!\r\n   Share these URLs with anyone who needs access.\r\n\r\n", httpURL, httpsURL)
+	tunnelMessage := common.FormatTunnelSuccessMessage(httpURL, httpsURL)
 
 	s.mutex.Lock()
 	sessions := s.sessions[conn]

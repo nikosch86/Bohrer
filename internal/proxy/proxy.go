@@ -164,18 +164,11 @@ func (p *Proxy) Start() error {
 
 // StartHTTPS starts the HTTPS server with TLS certificates
 func (p *Proxy) StartHTTPS() error {
-	// Check if certificate files exist
-	if _, err := os.Stat(p.config.ACMECertPath); os.IsNotExist(err) {
-		return fmt.Errorf("certificate file not found: %s", p.config.ACMECertPath)
-	}
-	if _, err := os.Stat(p.config.ACMEKeyPath); os.IsNotExist(err) {
-		return fmt.Errorf("key file not found: %s", p.config.ACMEKeyPath)
-	}
-
-	// Load TLS certificate
-	cert, err := tls.LoadX509KeyPair(p.config.ACMECertPath, p.config.ACMEKeyPath)
+	// Validate and load certificate
+	certValidator := common.NewCertificateValidator(p.config.ACMECertPath, p.config.ACMEKeyPath)
+	cert, err := certValidator.LoadCertificate()
 	if err != nil {
-		return fmt.Errorf("loading TLS certificate: %w", err)
+		return err
 	}
 
 	// Create TLS config

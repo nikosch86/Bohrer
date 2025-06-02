@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"bohrer-go/internal/common"
 	"bohrer-go/internal/config"
 	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
@@ -466,12 +467,15 @@ func (w *WebUI) getTunnelsFromSSH() []Tunnel {
 			continue
 		}
 
+		urlBuilder := common.NewURLBuilder(w.config.Domain)
+		httpURL, httpsURL := urlBuilder.BuildURLs(subdomain, w.config.HTTPPort, w.config.HTTPSPort)
+		
 		tunnel := Tunnel{
 			Subdomain: subdomain,
 			Target:    target,
 			Active:    true,
-			HTTPURL:   fmt.Sprintf("http://%s.%s", subdomain, w.config.Domain),
-			HTTPSURL:  fmt.Sprintf("https://%s.%s", subdomain, w.config.Domain),
+			HTTPURL:   httpURL,
+			HTTPSURL:  httpsURL,
 		}
 
 		tunnels = append(tunnels, tunnel)

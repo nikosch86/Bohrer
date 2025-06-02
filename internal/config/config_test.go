@@ -121,3 +121,136 @@ func TestGetEnvInt(t *testing.T) {
 		t.Errorf("Expected fallback 42 for invalid int, got %d", result)
 	}
 }
+
+func TestGetEnvBool(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVar   string
+		envValue string
+		fallback bool
+		expected bool
+	}{
+		// True values
+		{
+			name:     "true lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "true",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "True mixed case",
+			envVar:   "TEST_BOOL",
+			envValue: "True",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "TRUE uppercase",
+			envVar:   "TEST_BOOL",
+			envValue: "TRUE",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "1 numeric",
+			envVar:   "TEST_BOOL",
+			envValue: "1",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "yes lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "yes",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "YES uppercase",
+			envVar:   "TEST_BOOL",
+			envValue: "YES",
+			fallback: false,
+			expected: true,
+		},
+		{
+			name:     "on lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "on",
+			fallback: false,
+			expected: true,
+		},
+		// False values
+		{
+			name:     "false lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "false",
+			fallback: true,
+			expected: false,
+		},
+		{
+			name:     "FALSE uppercase",
+			envVar:   "TEST_BOOL",
+			envValue: "FALSE",
+			fallback: true,
+			expected: false,
+		},
+		{
+			name:     "0 numeric",
+			envVar:   "TEST_BOOL",
+			envValue: "0",
+			fallback: true,
+			expected: false,
+		},
+		{
+			name:     "no lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "no",
+			fallback: true,
+			expected: false,
+		},
+		{
+			name:     "off lowercase",
+			envVar:   "TEST_BOOL",
+			envValue: "off",
+			fallback: true,
+			expected: false,
+		},
+		// Fallback cases
+		{
+			name:     "empty value uses fallback true",
+			envVar:   "TEST_BOOL_EMPTY",
+			envValue: "",
+			fallback: true,
+			expected: true,
+		},
+		{
+			name:     "empty value uses fallback false",
+			envVar:   "TEST_BOOL_EMPTY",
+			envValue: "",
+			fallback: false,
+			expected: false,
+		},
+		{
+			name:     "invalid value uses fallback",
+			envVar:   "TEST_BOOL",
+			envValue: "maybe",
+			fallback: true,
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv(tt.envVar, tt.envValue)
+				defer os.Unsetenv(tt.envVar)
+			}
+
+			result := getEnvBool(tt.envVar, tt.fallback)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}

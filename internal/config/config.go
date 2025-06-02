@@ -40,14 +40,14 @@ func Load() *Config {
 		HTTPExternalPort:  getEnvInt("HTTP_EXTERNAL_PORT", 0),  // 0 means use HTTPPort
 		HTTPSExternalPort: getEnvInt("HTTPS_EXTERNAL_PORT", 0), // 0 means use HTTPSPort
 		SSHExternalPort:   getEnvInt("SSH_EXTERNAL_PORT", 0),   // 0 means use SSHPort
-		ACMEStaging:       getEnv("ACME_STAGING", "true") == "true",
+		ACMEStaging:       getEnvBool("ACME_STAGING", true),
 		ACMECertPath:      getEnv("ACME_CERT_PATH", "/data/certs/fullchain.pem"),
 		ACMEKeyPath:       getEnv("ACME_KEY_PATH", "/data/certs/key.pem"),
 		ACMEChallengeDir:  getEnv("ACME_CHALLENGE_DIR", "/data/acme-challenge"),
 		ACMERenewalDays:   getEnvInt("ACME_RENEWAL_DAYS", 30),
-		ACMEForceLocal:    getEnv("ACME_FORCE_LOCAL", "false") == "true",
+		ACMEForceLocal:    getEnvBool("ACME_FORCE_LOCAL", false),
 		ACMEDirectoryURL:  getEnv("ACME_DIRECTORY_URL", ""),
-		SkipACME:          getEnv("SKIP_ACME", "false") == "true",
+		SkipACME:          getEnvBool("SKIP_ACME", false),
 		AuthorizedKeys:    getEnv("SSH_AUTHORIZED_KEYS", "/data/authorized_keys"),
 		LogLevel:          getEnv("LOG_LEVEL", "INFO"),
 		UserStorageType:   getEnv("USER_STORAGE_TYPE", "file"),
@@ -78,6 +78,19 @@ func getEnvInt(key string, fallback int) int {
 	if value := os.Getenv(key); value != "" {
 		if i, err := strconv.Atoi(value); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if value := os.Getenv(key); value != "" {
+		// Accept various boolean representations
+		switch value {
+		case "true", "True", "TRUE", "1", "yes", "Yes", "YES", "on", "On", "ON":
+			return true
+		case "false", "False", "FALSE", "0", "no", "No", "NO", "off", "Off", "OFF":
+			return false
 		}
 	}
 	return fallback
