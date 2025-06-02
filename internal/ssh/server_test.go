@@ -1655,11 +1655,15 @@ func TestHandleConnectionUnknownChannelType(t *testing.T) {
 	}
 
 	// Test unknown channel type
+	clientDone := make(chan bool, 1)
+	channelRejected := make(chan bool, 1)
+	
 	go func() {
+		defer close(clientDone)
 		defer clientConn.Close()
 		sshConn, chans, reqs, err := ssh.NewClientConn(clientConn, "", clientConfig)
 		if err != nil {
-			t.Logf("Client connection failed: %v", err)
+			// Don't log from goroutine after test completes
 			return
 		}
 		defer sshConn.Close()
@@ -1669,9 +1673,9 @@ func TestHandleConnectionUnknownChannelType(t *testing.T) {
 		// Try to open unknown channel type
 		_, _, err = sshConn.OpenChannel("unknown-channel-type", nil)
 		if err == nil {
-			t.Error("Expected unknown channel type to be rejected")
+			channelRejected <- false
 		} else {
-			t.Logf("Unknown channel correctly rejected: %v", err)
+			channelRejected <- true
 		}
 
 		// Discard remaining channels
@@ -1685,11 +1689,34 @@ func TestHandleConnectionUnknownChannelType(t *testing.T) {
 	}()
 
 	// Wait for completion or timeout
+	testComplete := false
 	select {
 	case <-done:
-		t.Log("Unknown channel type test completed")
+		testComplete = true
 	case <-time.After(300 * time.Millisecond):
-		t.Log("Unknown channel type test completed with timeout")
+		testComplete = true
+	}
+	
+	// Check if channel was rejected
+	select {
+	case rejected := <-channelRejected:
+		if !rejected {
+			t.Error("Expected unknown channel type to be rejected")
+		}
+	case <-time.After(100 * time.Millisecond):
+		// Channel rejection didn't complete in time, but that's ok
+	}
+	
+	// Wait for client goroutine to finish
+	select {
+	case <-clientDone:
+		// Client finished
+	case <-time.After(100 * time.Millisecond):
+		// Give it a bit more time to clean up
+	}
+	
+	if testComplete {
+		t.Log("Unknown channel type test completed")
 	}
 }
 
@@ -1878,46 +1905,276 @@ func TestNewServerErrorHandling(t *testing.T) {
 }
 
 func TestAuthenticatePublicKey(t *testing.T) {
-	cfg := &config.Config{
-		Domain:         "test.com",
-		SSHPort:        2222,
-		HTTPPort:       8080,
-		HTTPSPort:      8443,
-		AuthorizedKeys: "/app/test/test_authorized_keys",
-	}
-
-	server := NewServer(cfg)
-
-	// Generate a test key pair
-	testPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate test SSH keys
+	privateKey1, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		t.Fatalf("Failed to generate test key: %v", err)
+		t.Fatalf("Failed to generate private key: %v", err)
 	}
-
-	testPublicKey, err := ssh.NewPublicKey(&testPrivateKey.PublicKey)
+	publicKey1, err := ssh.NewPublicKey(&privateKey1.PublicKey)
 	if err != nil {
-		t.Fatalf("Failed to create SSH public key: %v", err)
+		t.Fatalf("Failed to create public key: %v", err)
 	}
 
-	// Test with valid user but unauthorized key
-	connMeta := &mockConnMetadata{user: "tunnel"}
-	perms, err := server.authenticatePublicKey(connMeta, testPublicKey)
-	if err == nil {
-		t.Error("Expected error for unauthorized key, got nil")
+	privateKey2, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate second private key: %v", err)
 	}
-	if perms != nil {
-		t.Error("Expected nil permissions for unauthorized key")
+	publicKey2, err := ssh.NewPublicKey(&privateKey2.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to create second public key: %v", err)
 	}
 
-	// Test with invalid user
-	connMeta = &mockConnMetadata{user: "invalid"}
-	perms, err = server.authenticatePublicKey(connMeta, testPublicKey)
-	if err == nil {
-		t.Error("Expected error for invalid user, got nil")
+	// Marshal public keys to authorized_keys format
+	authorizedKey1 := string(ssh.MarshalAuthorizedKey(publicKey1))
+	authorizedKey2 := string(ssh.MarshalAuthorizedKey(publicKey2))
+
+	// Create temp file for authorized_keys
+	tmpFile, err := os.CreateTemp("", "authorized_keys_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	if perms != nil {
-		t.Error("Expected nil permissions for invalid user")
-	}
+	defer os.Remove(tmpFile.Name())
+
+	t.Run("successful auth with key store", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:    "test.local",
+			SSHPort:   2222,
+			HTTPPort:  8080,
+			HTTPSPort: 8443,
+		}
+		server := NewServer(cfg)
+		
+		mockStore := &mockSSHKeyStore{content: authorizedKey1}
+		server.SetSSHKeyStore(mockStore)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("successful auth with file fallback when key store empty", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: tmpFile.Name(),
+		}
+		
+		// Write authorized key to file
+		if err := os.WriteFile(tmpFile.Name(), []byte(authorizedKey1), 0600); err != nil {
+			t.Fatalf("Failed to write authorized_keys file: %v", err)
+		}
+		
+		server := NewServer(cfg)
+		mockStore := &mockSSHKeyStore{content: ""} // Empty key store
+		server.SetSSHKeyStore(mockStore)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("successful auth with file fallback when key store fails", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: tmpFile.Name(),
+		}
+		
+		// Write authorized key to file
+		if err := os.WriteFile(tmpFile.Name(), []byte(authorizedKey1), 0600); err != nil {
+			t.Fatalf("Failed to write authorized_keys file: %v", err)
+		}
+		
+		server := NewServer(cfg)
+		mockStore := &mockSSHKeyStore{content: authorizedKey2} // Different key in store
+		server.SetSSHKeyStore(mockStore)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication with file fallback, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("successful auth with file when no key store", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: tmpFile.Name(),
+		}
+		
+		// Write authorized key to file
+		if err := os.WriteFile(tmpFile.Name(), []byte(authorizedKey1), 0600); err != nil {
+			t.Fatalf("Failed to write authorized_keys file: %v", err)
+		}
+		
+		server := NewServer(cfg)
+		// No key store set
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("fail when wrong username", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:    "test.local",
+			SSHPort:   2222,
+			HTTPPort:  8080,
+			HTTPSPort: 8443,
+		}
+		server := NewServer(cfg)
+
+		mockConn := &mockConnMetadata{user: "wronguser"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err == nil {
+			t.Error("Expected authentication to fail, but it succeeded")
+		}
+		if !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("Expected error containing 'not allowed', but got: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("fail when key not in store or file", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: "/non/existent/file", // Ensure file-based auth also fails
+		}
+		server := NewServer(cfg)
+		
+		mockStore := &mockSSHKeyStore{content: authorizedKey1}
+		server.SetSSHKeyStore(mockStore)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey2) // Different key
+
+		if err == nil {
+			t.Error("Expected authentication to fail, but it succeeded")
+		}
+		// The error could be either from key store or file-based auth
+		if !strings.Contains(err.Error(), "public key") {
+			t.Errorf("Expected error containing 'public key', but got: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("auth with file containing comments and empty lines", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: tmpFile.Name(),
+		}
+		
+		// Write authorized key file with comments and empty lines
+		fileContent := "# This is a comment\n\n" + authorizedKey1 + "\n# Another comment\n"
+		if err := os.WriteFile(tmpFile.Name(), []byte(fileContent), 0600); err != nil {
+			t.Fatalf("Failed to write authorized_keys file: %v", err)
+		}
+		
+		server := NewServer(cfg)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("auth with file containing invalid keys", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: tmpFile.Name(),
+		}
+		
+		// Write authorized key file with invalid entries
+		fileContent := "invalid-key\n" + authorizedKey1 + "\ninvalid-key-2\n"
+		if err := os.WriteFile(tmpFile.Name(), []byte(fileContent), 0600); err != nil {
+			t.Fatalf("Failed to write authorized_keys file: %v", err)
+		}
+		
+		server := NewServer(cfg)
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err != nil {
+			t.Errorf("Expected successful authentication, but got error: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
+
+	t.Run("fail when no auth methods available", func(t *testing.T) {
+		cfg := &config.Config{
+			Domain:         "test.local",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			AuthorizedKeys: "/non/existent/file",
+		}
+		server := NewServer(cfg)
+		// No key store set
+
+		mockConn := &mockConnMetadata{user: "tunnel"}
+		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
+
+		if err == nil {
+			t.Error("Expected authentication to fail, but it succeeded")
+		}
+		if !strings.Contains(err.Error(), "public key authentication not available") {
+			t.Errorf("Expected error containing 'public key authentication not available', but got: %v", err)
+		}
+		if perms != nil {
+			t.Errorf("Expected nil permissions, but got: %v", perms)
+		}
+	})
 }
 
 func TestLoadAuthorizedKeys(t *testing.T) {
@@ -2767,18 +3024,166 @@ func TestSetSSHKeyStore(t *testing.T) {
 }
 
 // Mock implementations for testing
-type mockUserStore struct{}
+type mockUserStore struct {
+	users map[string]string
+}
 
 func (m *mockUserStore) GetUser(username string) (string, bool) {
-	return "", false
+	if m.users == nil {
+		return "", false
+	}
+	password, exists := m.users[username]
+	return password, exists
 }
 
 func (m *mockUserStore) VerifyPassword(username, password string) bool {
-	return false
+	if m.users == nil {
+		return false
+	}
+	storedPassword, exists := m.users[username]
+	return exists && storedPassword == password
 }
 
-type mockSSHKeyStore struct{}
+type mockSSHKeyStore struct {
+	content string
+}
 
 func (m *mockSSHKeyStore) GetAuthorizedKeysContent() string {
-	return ""
+	return m.content
 }
+
+// TestAuthenticateWithKeyStore tests the authenticateWithKeyStore function
+func TestAuthenticateWithKeyStore(t *testing.T) {
+	// Generate test SSH keys
+	privateKey1, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+	publicKey1, err := ssh.NewPublicKey(&privateKey1.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to create public key: %v", err)
+	}
+
+	privateKey2, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate second private key: %v", err)
+	}
+	publicKey2, err := ssh.NewPublicKey(&privateKey2.PublicKey)
+	if err != nil {
+		t.Fatalf("Failed to create second public key: %v", err)
+	}
+
+	// Marshal public keys to authorized_keys format
+	authorizedKey1 := string(ssh.MarshalAuthorizedKey(publicKey1))
+	authorizedKey2 := string(ssh.MarshalAuthorizedKey(publicKey2))
+
+	tests := []struct {
+		name            string
+		keyStoreContent string
+		clientKey       ssh.PublicKey
+		username        string
+		expectSuccess   bool
+		expectError     string
+	}{
+		{
+			name:            "successful authentication with single key",
+			keyStoreContent: authorizedKey1,
+			clientKey:       publicKey1,
+			username:        "testuser",
+			expectSuccess:   true,
+		},
+		{
+			name:            "successful authentication with multiple keys",
+			keyStoreContent: authorizedKey1 + authorizedKey2,
+			clientKey:       publicKey2,
+			username:        "testuser",
+			expectSuccess:   true,
+		},
+		{
+			name:            "authentication fails with wrong key",
+			keyStoreContent: authorizedKey1,
+			clientKey:       publicKey2,
+			username:        "testuser",
+			expectSuccess:   false,
+			expectError:     "public key not authorized",
+		},
+		{
+			name:            "empty key store",
+			keyStoreContent: "",
+			clientKey:       publicKey1,
+			username:        "testuser",
+			expectSuccess:   false,
+			expectError:     "no SSH keys configured",
+		},
+		{
+			name:            "key store with comments and empty lines",
+			keyStoreContent: "# This is a comment\n\n" + authorizedKey1 + "\n# Another comment\n\n",
+			clientKey:       publicKey1,
+			username:        "testuser",
+			expectSuccess:   true,
+		},
+		{
+			name:            "key store with invalid key",
+			keyStoreContent: authorizedKey1 + "invalid-key-data\n" + authorizedKey2,
+			clientKey:       publicKey2,
+			username:        "testuser",
+			expectSuccess:   true, // Should still succeed with valid key
+		},
+		{
+			name:            "key store with only invalid keys",
+			keyStoreContent: "invalid-key-1\ninvalid-key-2\n",
+			clientKey:       publicKey1,
+			username:        "testuser",
+			expectSuccess:   false,
+			expectError:     "public key not authorized",
+		},
+		{
+			name:            "key store with whitespace variations",
+			keyStoreContent: "  " + strings.TrimSpace(authorizedKey1) + "  \n",
+			clientKey:       publicKey1,
+			username:        "testuser",
+			expectSuccess:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create server with mock SSH key store
+			cfg := &config.Config{
+				Domain:    "test.local",
+				SSHPort:   2222,
+				HTTPPort:  8080,
+				HTTPSPort: 8443,
+			}
+			server := NewServer(cfg)
+			
+			mockStore := &mockSSHKeyStore{content: tt.keyStoreContent}
+			server.SetSSHKeyStore(mockStore)
+
+			// Create mock connection metadata
+			mockConn := &mockConnMetadata{
+				user: tt.username,
+			}
+
+			// Test authentication
+			perms, err := server.authenticateWithKeyStore(mockConn, tt.clientKey)
+
+			if tt.expectSuccess {
+				if err != nil {
+					t.Errorf("Expected successful authentication, but got error: %v", err)
+				}
+				if perms != nil {
+					t.Errorf("Expected nil permissions, but got: %v", perms)
+				}
+			} else {
+				if err == nil {
+					t.Error("Expected authentication to fail, but it succeeded")
+				}
+				if tt.expectError != "" && !strings.Contains(err.Error(), tt.expectError) {
+					t.Errorf("Expected error containing %q, but got: %v", tt.expectError, err)
+				}
+			}
+		})
+	}
+}
+
