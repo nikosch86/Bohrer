@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
+	"bohrer-go/internal/common"
 	"bohrer-go/internal/config"
 	"bohrer-go/internal/logger"
 )
@@ -21,9 +21,9 @@ type WebUIHandler interface {
 }
 
 type Proxy struct {
+	common.MutexHandler
 	config  *config.Config
 	tunnels map[string]string // subdomain -> target (host:port)
-	mutex   sync.RWMutex
 	webui   WebUIHandler
 }
 
@@ -35,24 +35,24 @@ func NewProxy(cfg *config.Config) *Proxy {
 }
 
 func (p *Proxy) AddTunnel(subdomain, target string) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.Lock()
+	defer p.Unlock()
 
 	p.tunnels[subdomain] = target
 	return nil
 }
 
 func (p *Proxy) RemoveTunnel(subdomain string) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.Lock()
+	defer p.Unlock()
 
 	delete(p.tunnels, subdomain)
 }
 
 // GetTunnel returns the target for a given subdomain (for testing and integration)
 func (p *Proxy) GetTunnel(subdomain string) (string, bool) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.RLock()
+	defer p.RUnlock()
 
 	target, exists := p.tunnels[subdomain]
 	return target, exists
@@ -84,9 +84,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up tunnel target
-	p.mutex.RLock()
+	p.RLock()
 	target, exists := p.tunnels[subdomain]
-	p.mutex.RUnlock()
+	p.RUnlock()
 
 	if !exists {
 		http.Error(w, "Tunnel not found for subdomain: "+subdomain, http.StatusNotFound)
@@ -138,9 +138,9 @@ func (p *Proxy) ServeHTTPS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up tunnel target
-	p.mutex.RLock()
+	p.RLock()
 	target, exists := p.tunnels[subdomain]
-	p.mutex.RUnlock()
+	p.RUnlock()
 
 	if !exists {
 		http.Error(w, "Tunnel not found for subdomain: "+subdomain, http.StatusNotFound)
@@ -289,8 +289,8 @@ func (p *Proxy) handleACMEChallenge(w http.ResponseWriter, r *http.Request) bool
 
 // GetTunnels returns a copy of all current tunnels (for monitoring/debugging)
 func (p *Proxy) GetTunnels() map[string]string {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.RLock()
+	defer p.RUnlock()
 
 	tunnels := make(map[string]string)
 	for k, v := range p.tunnels {

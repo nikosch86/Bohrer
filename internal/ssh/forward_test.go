@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/testutil/mocks"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -86,8 +87,8 @@ func TestForwardConnectionThroughSSHAdvanced(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Create a mock SSH connection
-	mockConn := &mockForwardSSHConn{
-		openChannelFunc: func(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
+	mockConn := &mocks.SSHConn{
+		OpenChannelFunc: func(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
 			if name != "forwarded-tcpip" {
 				return nil, nil, fmt.Errorf("unexpected channel type: %s", name)
 			}
@@ -177,8 +178,8 @@ func TestForwardConnectionThroughSSHAdvanced(t *testing.T) {
 	})
 
 	t.Run("channel open failure", func(t *testing.T) {
-		failConn := &mockForwardSSHConn{
-			openChannelFunc: func(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
+		failConn := &mocks.SSHConn{
+			OpenChannelFunc: func(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
 				return nil, nil, fmt.Errorf("failed to open channel")
 			},
 		}
@@ -200,28 +201,6 @@ func TestForwardConnectionThroughSSHAdvanced(t *testing.T) {
 	})
 }
 
-// mockForwardSSHConn is a mock implementation of ssh.Conn for testing forwarding
-type mockForwardSSHConn struct {
-	openChannelFunc func(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error)
-}
-
-func (m *mockForwardSSHConn) User() string                                            { return "test" }
-func (m *mockForwardSSHConn) SessionID() []byte                                       { return []byte("test-session") }
-func (m *mockForwardSSHConn) ClientVersion() []byte                                   { return []byte("test-client") }
-func (m *mockForwardSSHConn) ServerVersion() []byte                                   { return []byte("test-server") }
-func (m *mockForwardSSHConn) RemoteAddr() net.Addr                                    { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345} }
-func (m *mockForwardSSHConn) LocalAddr() net.Addr                                     { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 22} }
-func (m *mockForwardSSHConn) Close() error                                            { return nil }
-func (m *mockForwardSSHConn) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
-	return false, nil, nil
-}
-func (m *mockForwardSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
-	if m.openChannelFunc != nil {
-		return m.openChannelFunc(name, data)
-	}
-	return nil, nil, fmt.Errorf("not implemented")
-}
-func (m *mockForwardSSHConn) Wait() error { return nil }
 
 // TestHandleDirectTcpipImproved tests additional scenarios for handleDirectTcpip
 func TestHandleDirectTcpipImproved(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/testutil/mocks"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -81,11 +82,8 @@ func TestStartPasswordAuthentication(t *testing.T) {
 
 			// Setup user store if needed
 			if tt.setupUserStore {
-				mockStore := &mockUserStore{
-					users: map[string]string{
-						"testuser": "testpass",
-					},
-				}
+				mockStore := mocks.NewUserStore()
+				mockStore.AddUser("testuser", "testpass")
 				server.SetUserStore(mockStore)
 			}
 
@@ -201,7 +199,7 @@ func TestStartPublicKeyAuthentication(t *testing.T) {
 
 			// Setup key store if needed
 			if tt.setupKeyStore {
-				mockStore := &mockSSHKeyStore{content: tt.keyStoreContent}
+				mockStore := mocks.NewSSHKeyStore(tt.keyStoreContent)
 				server.SetSSHKeyStore(mockStore)
 			} else {
 				// Explicitly ensure no key store is set
@@ -268,11 +266,8 @@ func TestStartConnectionHandling(t *testing.T) {
 	server := NewServer(cfg)
 	
 	// Setup user store for easy auth
-	mockStore := &mockUserStore{
-		users: map[string]string{
-			"testuser": "testpass",
-		},
-	}
+	mockStore := mocks.NewUserStore()
+	mockStore.AddUser("testuser", "testpass")
 	server.SetUserStore(mockStore)
 
 	// Start server

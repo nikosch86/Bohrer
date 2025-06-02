@@ -1,21 +1,19 @@
 package ssh
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/testutil/mocks"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -207,7 +205,7 @@ func TestPasswordCallback(t *testing.T) {
 	sshConfig.AddHostKey(server.hostKey)
 
 	// Mock ConnMetadata for testing
-	mockMeta := &mockConnMetadata{user: "tunnel"}
+	mockMeta := &mocks.ConnMetadata{UserValue: "tunnel"}
 
 	// Test valid credentials
 	perms, err := sshConfig.PasswordCallback(mockMeta, []byte("test123"))
@@ -225,43 +223,13 @@ func TestPasswordCallback(t *testing.T) {
 	}
 
 	// Test invalid user
-	mockMeta.user = "wronguser"
+	mockMeta.UserValue = "wronguser"
 	_, err = sshConfig.PasswordCallback(mockMeta, []byte("test123"))
 	if err == nil {
 		t.Error("Expected invalid user to be rejected")
 	}
 }
 
-// Mock implementation of ssh.ConnMetadata for testing
-type mockConnMetadata struct {
-	user string
-}
-
-func (m *mockConnMetadata) User() string {
-	return m.user
-}
-
-func (m *mockConnMetadata) SessionID() []byte {
-	return []byte("test-session")
-}
-
-func (m *mockConnMetadata) ClientVersion() []byte {
-	return []byte("SSH-2.0-Test")
-}
-
-func (m *mockConnMetadata) ServerVersion() []byte {
-	return []byte("SSH-2.0-TestServer")
-}
-
-func (m *mockConnMetadata) RemoteAddr() net.Addr {
-	addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12345")
-	return addr
-}
-
-func (m *mockConnMetadata) LocalAddr() net.Addr {
-	addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:2222")
-	return addr
-}
 
 func TestHandleConnectionInvalidHandshake(t *testing.T) {
 	cfg := &config.Config{
@@ -364,7 +332,7 @@ func TestHandleConnectionValidHandshake(t *testing.T) {
 
 func TestTunnelStruct(t *testing.T) {
 	// Test Tunnel struct creation and fields
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 
 	tunnel := &Tunnel{
 		Subdomain: "test123",
@@ -462,37 +430,6 @@ func TestGenerateHostKeyMultipleCalls(t *testing.T) {
 	}
 }
 
-// Mock TunnelManager for testing
-type mockTunnelManager struct {
-	tunnels map[string]string
-	mutex   sync.RWMutex
-}
-
-func newMockTunnelManager() *mockTunnelManager {
-	return &mockTunnelManager{
-		tunnels: make(map[string]string),
-	}
-}
-
-func (m *mockTunnelManager) AddTunnel(subdomain, target string) error {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.tunnels[subdomain] = target
-	return nil
-}
-
-func (m *mockTunnelManager) RemoveTunnel(subdomain string) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	delete(m.tunnels, subdomain)
-}
-
-func (m *mockTunnelManager) GetTunnel(subdomain string) (string, bool) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-	target, exists := m.tunnels[subdomain]
-	return target, exists
-}
 
 func TestSetTunnelManager(t *testing.T) {
 	cfg := &config.Config{
@@ -503,7 +440,7 @@ func TestSetTunnelManager(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 
 	// Initially should be nil
 	if server.tunnelManager != nil {
@@ -527,8 +464,8 @@ func TestHandleTunnelRequestWrapper(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockChannel := &mockSSHChannel{}
-	mockConn := &mockSSHConn{}
+	mockChannel := &mocks.SSHChannel{}
+	mockConn := &mocks.SSHConn{}
 
 	// Test the wrapper function (HandleTunnelRequest vs handleTunnelRequest)
 	payload := []byte{0, 0, 0, 0, 0, 0, 0, 0} // valid payload
@@ -552,7 +489,7 @@ func TestHandleTunnelRequest(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// Create mock channel and connection
@@ -561,8 +498,8 @@ func TestHandleTunnelRequest(t *testing.T) {
 	defer conn2.Close()
 
 	// Mock SSH channel and connection
-	mockConn := &mockSSHConn{}
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockConn := &mocks.SSHConn{}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 
 	// Create valid tcpip-forward payload
 	// Format: string bind_address, uint32 bind_port
@@ -594,7 +531,7 @@ func TestHandleTunnelRequest(t *testing.T) {
 	}
 
 	// Check that response was written to channel
-	response := string(mockChannel.buffer)
+	response := string(mockChannel.Buffer)
 	expectedURLPattern := fmt.Sprintf("http://%s.%s:%d", subdomain, cfg.Domain, cfg.HTTPPort)
 	if !strings.Contains(response, expectedURLPattern) {
 		t.Errorf("Expected response to contain URL '%s', got '%s'", expectedURLPattern, response)
@@ -614,11 +551,11 @@ func TestHandleTunnelRequestRealPayload(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
-	mockConn := &mockSSHConn{}
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockConn := &mocks.SSHConn{}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 
 	// Real SSH payload: bind to "" (all interfaces) port 0 (dynamic allocation)
 	// SSH clients typically send this when using -R 0:host:port
@@ -632,7 +569,7 @@ func TestHandleTunnelRequestRealPayload(t *testing.T) {
 	subdomain, port := server.handleTunnelRequest(payload, mockChannel, mockConn)
 
 	t.Logf("Result: subdomain='%s', port=%d", subdomain, port)
-	t.Logf("Channel buffer: '%s'", string(mockChannel.buffer))
+	t.Logf("Channel buffer: '%s'", string(mockChannel.Buffer))
 
 	if subdomain == "" {
 		t.Error("Expected non-empty subdomain")
@@ -664,8 +601,8 @@ func TestHandleTunnelRequestInvalidPayload(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
-	mockConn := &mockSSHConn{}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
+	mockConn := &mocks.SSHConn{}
 
 	// Test with invalid payload (too short)
 	payload := []byte{0, 1, 2} // Too short
@@ -681,45 +618,6 @@ func TestHandleTunnelRequestInvalidPayload(t *testing.T) {
 	}
 }
 
-// Mock SSH connection and channel for testing
-type mockSSHConn struct{}
-
-func (m *mockSSHConn) User() string          { return "tunnel" }
-func (m *mockSSHConn) SessionID() []byte     { return []byte("test") }
-func (m *mockSSHConn) ClientVersion() []byte { return []byte("SSH-2.0-Test") }
-func (m *mockSSHConn) ServerVersion() []byte { return []byte("SSH-2.0-TestServer") }
-func (m *mockSSHConn) RemoteAddr() net.Addr {
-	addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12345")
-	return addr
-}
-func (m *mockSSHConn) LocalAddr() net.Addr {
-	addr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:2222")
-	return addr
-}
-func (m *mockSSHConn) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
-	return false, nil, nil
-}
-func (m *mockSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
-	return nil, nil, fmt.Errorf("mock error: administratively prohibited")
-}
-func (m *mockSSHConn) Close() error { return nil }
-func (m *mockSSHConn) Wait() error  { return nil }
-
-type mockSSHChannel struct {
-	buffer []byte
-}
-
-func (m *mockSSHChannel) Read(data []byte) (int, error) { return 0, nil }
-func (m *mockSSHChannel) Write(data []byte) (int, error) {
-	m.buffer = append(m.buffer, data...)
-	return len(data), nil
-}
-func (m *mockSSHChannel) Close() error      { return nil }
-func (m *mockSSHChannel) CloseWrite() error { return nil }
-func (m *mockSSHChannel) SendRequest(name string, wantReply bool, payload []byte) (bool, error) {
-	return false, nil
-}
-func (m *mockSSHChannel) Stderr() io.ReadWriter { return nil }
 
 func TestRemoveTunnel(t *testing.T) {
 	cfg := &config.Config{
@@ -730,11 +628,11 @@ func TestRemoveTunnel(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// Add a tunnel
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 	server.mutex.Lock()
 	server.tunnels["test123"] = &Tunnel{
 		Subdomain: "test123",
@@ -785,8 +683,8 @@ func TestGetTunnels(t *testing.T) {
 	}
 
 	// Add multiple tunnels
-	mockChannel1 := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
-	mockChannel2 := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockChannel1 := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
+	mockChannel2 := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 
 	server.mutex.Lock()
 	server.tunnels["tunnel1"] = &Tunnel{
@@ -832,11 +730,11 @@ func TestCleanupDisconnectedTunnels(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// Add connected and disconnected tunnels
-	connectedChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	connectedChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 	disconnectedChannel := &closedMockSSHChannel{}
 
 	server.mutex.Lock()
@@ -916,11 +814,15 @@ func TestCleanupTunnelsWithNilChannel(t *testing.T) {
 
 // Mock channel that simulates a closed/disconnected state
 type closedMockSSHChannel struct {
-	mockSSHChannel
+	mocks.SSHChannel
 }
 
 func (m *closedMockSSHChannel) Write(data []byte) (int, error) {
 	return 0, fmt.Errorf("channel closed")
+}
+
+func (m *closedMockSSHChannel) Close() error {
+	return nil
 }
 
 func TestDirectTcpipChannelHandling(t *testing.T) {
@@ -932,7 +834,7 @@ func TestDirectTcpipChannelHandling(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// First register a tunnel
@@ -940,7 +842,7 @@ func TestDirectTcpipChannelHandling(t *testing.T) {
 	server.tunnels["test123"] = &Tunnel{
 		Subdomain: "test123",
 		LocalPort: 3000,
-		Channel:   &mockSSHChannel{buffer: make([]byte, 0, 1024)},
+		Channel:   &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)},
 	}
 	server.mutex.Unlock()
 	mockTM.AddTunnel("test123", "localhost:3000")
@@ -1086,7 +988,7 @@ func TestTCPConnectionBridging(t *testing.T) {
 	defer conn2.Close()
 
 	// Create mock SSH channel that simulates immediate close
-	sshChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	sshChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 
 	// Test the bridge function with very short timeout
 	err := bridgeConnections(sshChannel, conn1, 5*time.Millisecond)
@@ -1255,7 +1157,7 @@ func (m *mockNewChannel) ExtraData() []byte {
 
 // Mock SSH channel that fails immediately to simulate connection failures
 type failingMockSSHChannel struct {
-	mockSSHChannel
+	mocks.SSHChannel
 }
 
 func (f *failingMockSSHChannel) Read(data []byte) (int, error) {
@@ -1280,7 +1182,7 @@ func TestHandleConnectionTcpipForward(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// Create SSH config
@@ -1510,7 +1412,7 @@ func TestHandleConnectionDirectTcpip(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// First create a tunnel
@@ -1731,7 +1633,7 @@ func TestConnectionCleanupOnDisconnect(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Add tunnel with multiple connections
-	mockChannel := &mockSSHChannel{buffer: make([]byte, 0, 1024)}
+	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 	server.mutex.Lock()
 	server.tunnels["test123"] = &Tunnel{
 		Subdomain:   "test123",
@@ -1944,10 +1846,10 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		}
 		server := NewServer(cfg)
 		
-		mockStore := &mockSSHKeyStore{content: authorizedKey1}
+		mockStore := mocks.NewSSHKeyStore(authorizedKey1)
 		server.SetSSHKeyStore(mockStore)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -1973,10 +1875,10 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		}
 		
 		server := NewServer(cfg)
-		mockStore := &mockSSHKeyStore{content: ""} // Empty key store
+		mockStore := mocks.NewSSHKeyStore("") // Empty key store
 		server.SetSSHKeyStore(mockStore)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -2002,10 +1904,10 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		}
 		
 		server := NewServer(cfg)
-		mockStore := &mockSSHKeyStore{content: authorizedKey2} // Different key in store
+		mockStore := mocks.NewSSHKeyStore(authorizedKey2) // Different key in store
 		server.SetSSHKeyStore(mockStore)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -2033,7 +1935,7 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		server := NewServer(cfg)
 		// No key store set
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -2053,7 +1955,7 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		}
 		server := NewServer(cfg)
 
-		mockConn := &mockConnMetadata{user: "wronguser"}
+		mockConn := &mocks.ConnMetadata{UserValue: "wronguser"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err == nil {
@@ -2077,10 +1979,10 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		}
 		server := NewServer(cfg)
 		
-		mockStore := &mockSSHKeyStore{content: authorizedKey1}
+		mockStore := mocks.NewSSHKeyStore(authorizedKey1)
 		server.SetSSHKeyStore(mockStore)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey2) // Different key
 
 		if err == nil {
@@ -2112,7 +2014,7 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		
 		server := NewServer(cfg)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -2140,7 +2042,7 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		
 		server := NewServer(cfg)
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err != nil {
@@ -2162,7 +2064,7 @@ func TestAuthenticatePublicKey(t *testing.T) {
 		server := NewServer(cfg)
 		// No key store set
 
-		mockConn := &mockConnMetadata{user: "tunnel"}
+		mockConn := &mocks.ConnMetadata{UserValue: "tunnel"}
 		perms, err := server.authenticatePublicKey(mockConn, publicKey1)
 
 		if err == nil {
@@ -2245,7 +2147,7 @@ func TestForwardConnectionThroughSSH(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create mock SSH connection
-	mockSSHConn := &mockSSHConn{}
+	mockSSHConn := &mocks.SSHConn{}
 
 	// Test with invalid forward target format
 	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
@@ -2271,7 +2173,7 @@ func TestStartRemoteForwardListener(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Create mock SSH connection
-	mockSSHConn := &mockSSHConn{}
+	mockSSHConn := &mocks.SSHConn{}
 
 	// Test with invalid port (should fail to bind)
 	go server.startRemoteForwardListener(-1, mockSSHConn)
@@ -2307,7 +2209,7 @@ func TestSendTunnelURLsToSessions(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Create mock SSH connection
-	mockSSHConn := &mockSSHConn{}
+	mockSSHConn := &mocks.SSHConn{}
 
 	// Test with no active sessions - should store as pending
 	server.sendTunnelURLsToSessions(mockSSHConn, "http://test.example.com", "https://test.example.com")
@@ -2322,7 +2224,7 @@ func TestSendTunnelURLsToSessions(t *testing.T) {
 	}
 
 	// Create a mock session and add it
-	mockChannel := &mockSSHChannel{}
+	mockChannel := &mocks.SSHChannel{}
 	server.mutex.Lock()
 	server.sessions[mockSSHConn] = []ssh.Channel{mockChannel}
 	server.mutex.Unlock()
@@ -2358,7 +2260,7 @@ func TestServerPasswordCallback(t *testing.T) {
 	}
 
 	// Test valid password
-	connMeta := &mockConnMetadata{user: "tunnel"}
+	connMeta := &mocks.ConnMetadata{UserValue: "tunnel"}
 	perms, err := sshConfig.PasswordCallback(connMeta, []byte("test123"))
 	if err != nil {
 		t.Errorf("Expected no error for valid password, got: %v", err)
@@ -2377,7 +2279,7 @@ func TestServerPasswordCallback(t *testing.T) {
 	}
 
 	// Test invalid user
-	connMeta = &mockConnMetadata{user: "invalid"}
+	connMeta = &mocks.ConnMetadata{UserValue: "invalid"}
 	perms, err = sshConfig.PasswordCallback(connMeta, []byte("test123"))
 	if err == nil {
 		t.Error("Expected error for invalid user")
@@ -2417,7 +2319,7 @@ func TestServerPublicKeyCallback(t *testing.T) {
 	}
 
 	// Test the callback
-	connMeta := &mockConnMetadata{user: "tunnel"}
+	connMeta := &mocks.ConnMetadata{UserValue: "tunnel"}
 	perms, err := sshConfig.PublicKeyCallback(connMeta, testPublicKey)
 
 	// Should get an error since the key is not in authorized_keys
@@ -2497,7 +2399,7 @@ func TestBridgeConnectionsTimeout(t *testing.T) {
 	defer conn2.Close()
 
 	// Create a mock SSH channel
-	mockChannel := &mockSSHChannel{}
+	mockChannel := &mocks.SSHChannel{}
 
 	// Test bridgeConnections with a very short timeout
 	err := bridgeConnections(mockChannel, conn1, 1*time.Millisecond)
@@ -2527,7 +2429,7 @@ func TestForwardConnectionErrorPaths(t *testing.T) {
 	defer clientConn.Close()
 
 	// Create mock SSH connection
-	mockSSHConn := &mockSSHConn{}
+	mockSSHConn := &mocks.SSHConn{}
 
 	// Test forwardConnectionThroughSSH error cases
 	// This will trigger the SSH channel open error
@@ -2582,7 +2484,7 @@ func TestHandleConnectionGlobalRequestsUnknown(t *testing.T) {
 	}
 
 	server := NewServer(cfg)
-	mockTM := newMockTunnelManager()
+	mockTM := mocks.NewTunnelManager()
 	server.SetTunnelManager(mockTM)
 
 	// Create SSH config
@@ -2888,20 +2790,6 @@ func TestHandleConnectionAcceptError(t *testing.T) {
 }
 
 // Mock certificate manager for testing
-type mockCertificateManager struct {
-	ensureSubdomainCalls  []string
-	cleanupSubdomainCalls []string
-}
-
-func (m *mockCertificateManager) EnsureSubdomainCertificate(ctx context.Context, subdomain string) error {
-	m.ensureSubdomainCalls = append(m.ensureSubdomainCalls, subdomain)
-	return nil
-}
-
-func (m *mockCertificateManager) CleanupSubdomainCertificate(subdomain string) error {
-	m.cleanupSubdomainCalls = append(m.cleanupSubdomainCalls, subdomain)
-	return nil
-}
 
 func TestSetCertificateManager(t *testing.T) {
 	cfg := &config.Config{
@@ -2917,7 +2805,7 @@ func TestSetCertificateManager(t *testing.T) {
 	}
 
 	// Set certificate manager
-	mockCM := &mockCertificateManager{}
+	mockCM := mocks.NewCertificateManager()
 	server.SetCertificateManager(mockCM)
 
 	if server.certificateManager != mockCM {
@@ -2988,7 +2876,7 @@ func TestSetUserStore(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Create a mock user store
-	mockStore := &mockUserStore{}
+	mockStore := mocks.NewUserStore()
 
 	// Set the user store
 	server.SetUserStore(mockStore)
@@ -3012,7 +2900,7 @@ func TestSetSSHKeyStore(t *testing.T) {
 	server := NewServer(cfg)
 
 	// Create a mock SSH key store
-	mockStore := &mockSSHKeyStore{}
+	mockStore := mocks.NewSSHKeyStore("")
 
 	// Set the SSH key store
 	server.SetSSHKeyStore(mockStore)
@@ -3023,34 +2911,6 @@ func TestSetSSHKeyStore(t *testing.T) {
 	}
 }
 
-// Mock implementations for testing
-type mockUserStore struct {
-	users map[string]string
-}
-
-func (m *mockUserStore) GetUser(username string) (string, bool) {
-	if m.users == nil {
-		return "", false
-	}
-	password, exists := m.users[username]
-	return password, exists
-}
-
-func (m *mockUserStore) VerifyPassword(username, password string) bool {
-	if m.users == nil {
-		return false
-	}
-	storedPassword, exists := m.users[username]
-	return exists && storedPassword == password
-}
-
-type mockSSHKeyStore struct {
-	content string
-}
-
-func (m *mockSSHKeyStore) GetAuthorizedKeysContent() string {
-	return m.content
-}
 
 // TestAuthenticateWithKeyStore tests the authenticateWithKeyStore function
 func TestAuthenticateWithKeyStore(t *testing.T) {
@@ -3157,12 +3017,12 @@ func TestAuthenticateWithKeyStore(t *testing.T) {
 			}
 			server := NewServer(cfg)
 			
-			mockStore := &mockSSHKeyStore{content: tt.keyStoreContent}
+			mockStore := mocks.NewSSHKeyStore(tt.keyStoreContent)
 			server.SetSSHKeyStore(mockStore)
 
 			// Create mock connection metadata
-			mockConn := &mockConnMetadata{
-				user: tt.username,
+			mockConn := &mocks.ConnMetadata{
+				UserValue: tt.username,
 			}
 
 			// Test authentication

@@ -237,6 +237,81 @@ func TestWriteAtomicFile(t *testing.T) {
 	}
 }
 
+func TestWriteAtomicFile_ErrorCases(t *testing.T) {
+	t.Run("directory creation fails", func(t *testing.T) {
+		// Skip this test if running as root
+		if os.Getuid() == 0 {
+			t.Skip("Skipping permission test when running as root")
+		}
+		
+		// Try to write to a path where we don't have permission
+		err := WriteAtomicFile("/root/test/file.txt", []byte("test"), 0644)
+		if err == nil {
+			t.Error("Expected error when writing to restricted path")
+		}
+	})
+
+	t.Run("temp file write fails", func(t *testing.T) {
+		tempDir := t.TempDir()
+		
+		// Make directory read-only to prevent temp file creation
+		if err := os.Chmod(tempDir, 0555); err != nil {
+			t.Fatalf("Failed to change permissions: %v", err)
+		}
+		defer os.Chmod(tempDir, 0755) // restore permissions
+		
+		err := WriteAtomicFile(filepath.Join(tempDir, "file.txt"), []byte("test"), 0644)
+		if err == nil {
+			t.Error("Expected error when temp file write fails")
+		}
+	})
+
+	t.Run("rename fails and temp file cleanup", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "target.txt")
+		
+		// Create a directory with the target filename to make rename fail
+		if err := os.MkdirAll(targetPath, 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		
+		err := WriteAtomicFile(targetPath, []byte("test"), 0644)
+		if err == nil {
+			t.Error("Expected error when rename fails")
+		}
+		
+		// Check that temp file was cleaned up
+		tempFile := targetPath + ".tmp"
+		if _, err := os.Stat(tempFile); err == nil {
+			t.Error("Temporary file was not cleaned up after rename failure")
+		}
+	})
+}
+
+func TestWriteFileWithDir_WriteError(t *testing.T) {
+	t.Run("write fails due to permissions", func(t *testing.T) {
+		tempDir := t.TempDir()
+		
+		// Create a subdirectory
+		subDir := filepath.Join(tempDir, "subdir")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("Failed to create subdirectory: %v", err)
+		}
+		
+		// Make the subdirectory read-only
+		if err := os.Chmod(subDir, 0555); err != nil {
+			t.Fatalf("Failed to change permissions: %v", err)
+		}
+		defer os.Chmod(subDir, 0755) // restore permissions
+		
+		// Try to write a file in the read-only directory
+		err := WriteFileWithDir(filepath.Join(subDir, "file.txt"), []byte("test"), 0644)
+		if err == nil {
+			t.Error("Expected error when writing to read-only directory")
+		}
+	})
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || len(substr) < len(s) && findSubstring(s, substr)))
 }

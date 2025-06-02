@@ -55,9 +55,9 @@ func TestAddTunnel(t *testing.T) {
 	}
 
 	// Check tunnel was added
-	proxy.mutex.RLock()
+	proxy.RLock()
 	target, exists := proxy.tunnels["test123"]
-	proxy.mutex.RUnlock()
+	proxy.RUnlock()
 
 	if !exists {
 		t.Error("Expected tunnel to exist after adding")
@@ -82,9 +82,9 @@ func TestRemoveTunnel(t *testing.T) {
 	proxy.RemoveTunnel("test123")
 
 	// Check tunnel was removed
-	proxy.mutex.RLock()
+	proxy.RLock()
 	_, exists := proxy.tunnels["test123"]
-	proxy.mutex.RUnlock()
+	proxy.RUnlock()
 
 	if exists {
 		t.Error("Expected tunnel to be removed")
@@ -253,9 +253,9 @@ func TestTunnelManagement(t *testing.T) {
 	proxy.AddTunnel("tunnel1", "localhost:3001")
 	proxy.AddTunnel("tunnel2", "localhost:3002")
 
-	proxy.mutex.RLock()
+	proxy.RLock()
 	count := len(proxy.tunnels)
-	proxy.mutex.RUnlock()
+	proxy.RUnlock()
 
 	if count != 2 {
 		t.Errorf("Expected 2 tunnels, got %d", count)
@@ -264,10 +264,10 @@ func TestTunnelManagement(t *testing.T) {
 	// Test removing specific tunnel
 	proxy.RemoveTunnel("tunnel1")
 
-	proxy.mutex.RLock()
+	proxy.RLock()
 	count = len(proxy.tunnels)
 	_, exists := proxy.tunnels["tunnel2"]
-	proxy.mutex.RUnlock()
+	proxy.RUnlock()
 
 	if count != 1 {
 		t.Errorf("Expected 1 tunnel after removal, got %d", count)
@@ -471,9 +471,9 @@ func TestAddTunnelOverwrite(t *testing.T) {
 	}
 
 	// Verify new target
-	proxy.mutex.RLock()
+	proxy.RLock()
 	target := proxy.tunnels["test"]
-	proxy.mutex.RUnlock()
+	proxy.RUnlock()
 
 	if target != "localhost:4000" {
 		t.Errorf("Expected 'localhost:4000', got '%s'", target)
