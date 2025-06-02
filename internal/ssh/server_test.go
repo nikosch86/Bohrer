@@ -2705,3 +2705,68 @@ func TestGetActiveTunnelSubdomains(t *testing.T) {
 		t.Errorf("Missing subdomains: %v", expectedSubdomains)
 	}
 }
+
+func TestSetUserStore(t *testing.T) {
+	cfg := &config.Config{
+		Domain:     "test.local",
+		SSHPort:    2222,
+		HTTPPort:   8080,
+		HTTPSPort:  8443,
+		SkipACME:   true,
+		LogLevel:   "ERROR",
+	}
+	
+	server := NewServer(cfg)
+	
+	// Create a mock user store
+	mockStore := &mockUserStore{}
+	
+	// Set the user store
+	server.SetUserStore(mockStore)
+	
+	// Verify it was set
+	if server.userStore != mockStore {
+		t.Error("User store was not set correctly")
+	}
+}
+
+func TestSetSSHKeyStore(t *testing.T) {
+	cfg := &config.Config{
+		Domain:     "test.local",
+		SSHPort:    2222,
+		HTTPPort:   8080,
+		HTTPSPort:  8443,
+		SkipACME:   true,
+		LogLevel:   "ERROR",
+	}
+	
+	server := NewServer(cfg)
+	
+	// Create a mock SSH key store
+	mockStore := &mockSSHKeyStore{}
+	
+	// Set the SSH key store
+	server.SetSSHKeyStore(mockStore)
+	
+	// Verify it was set
+	if server.sshKeyStore != mockStore {
+		t.Error("SSH key store was not set correctly")
+	}
+}
+
+// Mock implementations for testing
+type mockUserStore struct{}
+
+func (m *mockUserStore) GetUser(username string) (string, bool) {
+	return "", false
+}
+
+func (m *mockUserStore) VerifyPassword(username, password string) bool {
+	return false
+}
+
+type mockSSHKeyStore struct{}
+
+func (m *mockSSHKeyStore) GetAuthorizedKeysContent() string {
+	return ""
+}

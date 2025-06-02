@@ -139,3 +139,56 @@ func (m *MockProxy) GetTunnel(subdomain string) (string, bool) {
 	target, exists := m.tunnels[subdomain]
 	return target, exists
 }
+
+func TestNewUserStoreAdapter(t *testing.T) {
+	userStore := NewInMemoryUserStore()
+	adapter := NewUserStoreAdapter(userStore)
+
+	if adapter == nil {
+		t.Fatal("NewUserStoreAdapter returned nil")
+	}
+}
+
+func TestUserStoreAdapter_GetUser(t *testing.T) {
+	userStore := NewInMemoryUserStore()
+	userStore.CreateUser("testuser", "testpass")
+
+	adapter := NewUserStoreAdapter(userStore)
+
+	// Test existing user
+	password, exists := adapter.GetUser("testuser")
+	if !exists {
+		t.Error("Expected user to exist")
+	}
+	if password != "testpass" {
+		t.Errorf("Expected password 'testpass', got %s", password)
+	}
+
+	// Test non-existing user
+	_, exists = adapter.GetUser("nonexistent")
+	if exists {
+		t.Error("Non-existing user should not exist")
+	}
+}
+
+func TestUserStoreAdapter_VerifyPassword(t *testing.T) {
+	userStore := NewInMemoryUserStore()
+	userStore.CreateUser("testuser", "testpass")
+
+	adapter := NewUserStoreAdapter(userStore)
+
+	// Test correct password
+	if !adapter.VerifyPassword("testuser", "testpass") {
+		t.Error("Should verify correct password")
+	}
+
+	// Test incorrect password
+	if adapter.VerifyPassword("testuser", "wrongpass") {
+		t.Error("Should not verify incorrect password")
+	}
+
+	// Test non-existing user
+	if adapter.VerifyPassword("nonexistent", "anypass") {
+		t.Error("Should not verify non-existing user")
+	}
+}

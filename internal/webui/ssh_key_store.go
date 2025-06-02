@@ -351,6 +351,10 @@ func (s *InMemorySSHKeyStore) DeleteKey(name string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	if _, exists := s.keys[name]; !exists {
+		return fmt.Errorf("SSH key %s does not exist", name)
+	}
+
 	delete(s.keys, name)
 	return nil
 }
