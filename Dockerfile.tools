@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS tools
+FROM golang:1.24-alpine AS tools
 
 # Install system dependencies
 RUN apk add --no-cache git ca-certificates
@@ -13,7 +13,7 @@ RUN go install golang.org/x/vuln/cmd/govulncheck@latest
 RUN go install golang.org/x/tools/cmd/deadcode@latest
 
 # Create final image with all tools
-FROM golang:1.23-alpine
+FROM golang:1.24-alpine
 
 # Install system dependencies
 RUN apk add --no-cache git ca-certificates bc

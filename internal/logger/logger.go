@@ -75,11 +75,24 @@ func logf(level LogLevel, format string, args ...interface{}) {
 	}
 }
 
+// log logs a message at the specified level without formatting
+func logMessage(level LogLevel, args ...interface{}) {
+	if level < currentLevel {
+		return
+	}
+
+	message := fmt.Sprint(args...)
+	levelName := levelNames[level]
+	log.Printf("[%s] %s", levelName, message)
+
+	if level == FATAL {
+		os.Exit(1)
+	}
+}
+
 // Debug logs a debug message
 func Debug(args ...interface{}) {
-	if DEBUG >= currentLevel {
-		logf(DEBUG, fmt.Sprint(args...))
-	}
+	logMessage(DEBUG, args...)
 }
 
 // Debugf logs a formatted debug message
@@ -89,7 +102,7 @@ func Debugf(format string, args ...interface{}) {
 
 // Info logs an info message
 func Info(args ...interface{}) {
-	logf(INFO, fmt.Sprint(args...))
+	logMessage(INFO, args...)
 }
 
 // Infof logs a formatted info message
@@ -99,7 +112,7 @@ func Infof(format string, args ...interface{}) {
 
 // Warn logs a warning message
 func Warn(args ...interface{}) {
-	logf(WARN, fmt.Sprint(args...))
+	logMessage(WARN, args...)
 }
 
 // Warnf logs a formatted warning message
@@ -109,7 +122,7 @@ func Warnf(format string, args ...interface{}) {
 
 // Error logs an error message
 func Error(args ...interface{}) {
-	logf(ERROR, fmt.Sprint(args...))
+	logMessage(ERROR, args...)
 }
 
 // Errorf logs a formatted error message
@@ -119,7 +132,7 @@ func Errorf(format string, args ...interface{}) {
 
 // Fatal logs a fatal message and exits
 func Fatal(args ...interface{}) {
-	logf(FATAL, fmt.Sprint(args...))
+	logMessage(FATAL, args...)
 }
 
 // Fatalf logs a formatted fatal message and exits

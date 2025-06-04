@@ -221,12 +221,12 @@ your-domain.com.     IN  A  YOUR_SERVER_IP
 
 ### Prerequisites
 - Docker and Docker Compose (the project is supposed to run in containers)
-- Go 1.23 or later (optional - only if you want to run tests locally)
+- Go 1.24 or later (optional - only if you want to run tests locally)
 - The Makefile supports both Docker-based and local Go testing
 
 ### Running Tests
 ```bash
-# Unit tests with coverage (can run locally with Go 1.23+)
+# Unit tests with coverage (can run locally with Go 1.24+)
 make test
 
 # Run tests for specific package
