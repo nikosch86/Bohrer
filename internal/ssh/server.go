@@ -593,12 +593,19 @@ func (s *Server) handleTunnelRequest(payload []byte, channel ssh.Channel, conn s
 	portBytes := payload[4+addressLen : 4+addressLen+4]
 	requestedPort := int(portBytes[0])<<24 | int(portBytes[1])<<16 | int(portBytes[2])<<8 | int(portBytes[3])
 
+	// Validate port is within valid range
+	if requestedPort < 0 || requestedPort > 65535 {
+		logger.Debugf("Invalid requested port number: %d", requestedPort)
+		return "", 0
+	}
+
 	// For SSH remote forwarding, we assign a virtual port for the tunnel
 	// Since we're doing HTTP proxy routing by subdomain, the actual port doesn't matter
 	// but SSH clients expect a non-zero port to indicate success
 	assignedPort := requestedPort
 	if assignedPort == 0 {
 		// Assign a virtual port for dynamic allocation requests
+		// Ensure it stays within valid port range (22000-22999)
 		assignedPort = 22000 + (int(time.Now().UnixNano()) % 1000)
 	} else {
 		logger.Debugf("Using requested port: %d", assignedPort)
@@ -729,6 +736,16 @@ func (s *Server) forwardConnectionThroughSSH(localConn net.Conn, sshConn ssh.Con
 	// Get originator address and port from the incoming connection
 	originAddr, originPortStr, _ := net.SplitHostPort(localConn.RemoteAddr().String())
 	originPort, _ := strconv.Atoi(originPortStr)
+
+	// Validate port numbers are within valid range for uint32
+	if listeningPort < 0 || listeningPort > 65535 {
+		logger.Debugf("Invalid listening port number: %d", listeningPort)
+		return
+	}
+	if originPort < 0 || originPort > 65535 {
+		logger.Debugf("Invalid origin port number: %d", originPort)
+		return
+	}
 
 	// Open a new channel for this forwarded connection
 	// According to RFC 4254, forwarded-tcpip payload is:
