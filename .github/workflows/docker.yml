@@ -23,7 +23,8 @@ jobs:
 
     strategy:
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        platform: [linux/amd64]
+        # platform: [linux/amd64, linux/arm64]
 
     steps:
     - name: Checkout code
