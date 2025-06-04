@@ -4,7 +4,7 @@
 SHELL := /bin/bash
 
 # Variables for consistency
-REQUIRED_GO_VERSION := 1.23
+REQUIRED_GO_VERSION := 1.24
 DOCKER_COMPOSE_E2E := docker-compose.e2e.yml
 COVERAGE_THRESHOLD := 85
 TEST_TIMEOUT := 60s

@@ -751,18 +751,57 @@ func TestHandleTunnelRequestInvalidPayload(t *testing.T) {
 	mockChannel := &mocks.SSHChannel{Buffer: make([]byte, 0, 1024)}
 	mockConn := &mocks.SSHConn{}
 
-	// Test with invalid payload (too short)
-	payload := []byte{0, 1, 2} // Too short
+	t.Run("payload too short", func(t *testing.T) {
+		payload := []byte{0, 1, 2} // Too short
 
-	subdomain, port := server.handleTunnelRequest(payload, mockChannel, mockConn)
+		subdomain, port := server.handleTunnelRequest(payload, mockChannel, mockConn)
 
-	if subdomain != "" {
-		t.Error("Expected empty subdomain for invalid payload")
-	}
+		if subdomain != "" {
+			t.Error("Expected empty subdomain for invalid payload")
+		}
 
-	if port != 0 {
-		t.Error("Expected port 0 for invalid payload")
-	}
+		if port != 0 {
+			t.Error("Expected port 0 for invalid payload")
+		}
+	})
+
+	t.Run("invalid port number", func(t *testing.T) {
+		// Create payload with invalid port (> 65535)
+		// Format: 4 bytes address length (0) + 0 bytes address + 4 bytes port
+		payload := []byte{
+			0, 0, 0, 0, // address length = 0
+			0, 1, 0, 0, // port = 65536 (0x00010000)
+		}
+
+		subdomain, port := server.handleTunnelRequest(payload, mockChannel, mockConn)
+
+		if subdomain != "" {
+			t.Error("Expected empty subdomain for invalid port")
+		}
+
+		if port != 0 {
+			t.Error("Expected port 0 for invalid port")
+		}
+	})
+
+	t.Run("negative port number", func(t *testing.T) {
+		// Create payload with negative port (when interpreted as signed int)
+		// Format: 4 bytes address length (0) + 0 bytes address + 4 bytes port
+		payload := []byte{
+			0, 0, 0, 0, // address length = 0
+			255, 255, 255, 255, // port = -1 when interpreted as signed int
+		}
+
+		subdomain, port := server.handleTunnelRequest(payload, mockChannel, mockConn)
+
+		if subdomain != "" {
+			t.Error("Expected empty subdomain for negative port")
+		}
+
+		if port != 0 {
+			t.Error("Expected port 0 for negative port")
+		}
+	})
 }
 
 
@@ -2296,14 +2335,20 @@ func TestForwardConnectionThroughSSH(t *testing.T) {
 	// Create mock SSH connection
 	mockSSHConn := &mocks.SSHConn{}
 
-	// Test with invalid forward target format
+	// Test with valid port
 	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
 
 	// Give it time to process
 	time.Sleep(100 * time.Millisecond)
 
-	// Test with valid format but unparseable port - skipping as forwardTarget is no longer used
-	// go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 3000)
+	// Test with invalid negative port (should return early)
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, -1)
+
+	// Give it time to process
+	time.Sleep(100 * time.Millisecond)
+
+	// Test with port > 65535 (should return early)
+	go server.forwardConnectionThroughSSH(serverConn, mockSSHConn, 70000)
 
 	// Give it time to process
 	time.Sleep(100 * time.Millisecond)

@@ -306,14 +306,25 @@ func TestSSHKeyStore_AuthorizedKeysFormat(t *testing.T) {
 		t.Errorf("Expected 2 lines, got %d", len(lines))
 	}
 
-	// First key should have comment appended
-	if !strings.Contains(lines[0], "Comment 1") {
-		t.Error("First key should have comment")
+	// Check that both keys are present (order not guaranteed due to map iteration)
+	foundKeyWithComment := false
+	foundED25519Key := false
+	
+	for _, line := range lines {
+		if strings.Contains(line, testutil.ValidRSAKey) && strings.Contains(line, "Comment 1") {
+			foundKeyWithComment = true
+		}
+		if strings.Contains(line, testutil.ValidED25519Key) {
+			foundED25519Key = true
+		}
 	}
-
-	// Second key already has a comment in the key itself
-	if !strings.Contains(lines[1], testutil.ValidED25519Key) {
-		t.Error("Second key should be present")
+	
+	if !foundKeyWithComment {
+		t.Error("RSA key with comment should be present")
+	}
+	
+	if !foundED25519Key {
+		t.Error("ED25519 key should be present")
 	}
 }
 
