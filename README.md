@@ -38,7 +38,7 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
    cp .env.example .env
    
    # Edit .env with your settings
-   nano .env
+   vi .env
    ```
 
 3. **Set up SSH key authentication (recommended for production):**
@@ -69,7 +69,7 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 ```
 ┌─────────────────┐    SSH Tunnel    ┌──────────────────┐    HTTP Proxy    ┌─────────────────┐
 │   Your Local   │ ────────────────▶ │  Bohrer Server   │ ────────────────▶ │   Internet      │
-│   Service       │                  │  + WebUI         │                  │   Users         │
+│   Service       │         :2222    │  + WebUI         │        :8080     │   Users         │
 │   localhost:3000│ ◀──────────────── │  your-server.com │ ◀──────────────── │                 │
 └─────────────────┘                  └──────────────────┘                  └─────────────────┘
                                             │
@@ -277,8 +277,8 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 #### WebUI Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WEBUI_USERNAME` | `admin` | WebUI admin username (empty = auto-generate) |
-| `WEBUI_PASSWORD` | _(auto-generated)_ | WebUI admin password (empty = auto-generate) |
+| `WEBUI_USERNAME` | _(empty)_ | WebUI admin username (empty = auto-generate) |
+| `WEBUI_PASSWORD` | _(empty)_ | WebUI admin password (empty = auto-generate) |
 
 ### Certificate Configuration Scenarios
 
@@ -462,19 +462,28 @@ your-domain.com.     IN  A  YOUR_SERVER_IP
 *.your-domain.com.   IN  A  YOUR_SERVER_IP
 ```
 
-## Development Setup
+## Development Setup (For Contributors)
 
 ### Prerequisites
-- Docker and Docker Compose
-- No local Go installation required (everything runs in containers)
+- Docker and Docker Compose (the project is supposed to run in containers)
+- Go 1.23 or later (optional - only if you want to run tests locally)
+- The Makefile supports both Docker-based and local Go testing
 
 ### Running Tests
 ```bash
-# Unit tests with coverage
+# Unit tests with coverage (can run locally with Go 1.23+)
 make test
 
-# End-to-end tests (automatically generates SSH keys)
+# Run tests for specific package
+make test-ssh     # SSH package tests
+make test-proxy   # Proxy package tests
+make test-webui   # WebUI package tests
+
+# End-to-end tests (requires Docker)
 make e2e
+
+# Generate coverage report
+make coverage     # Generates coverage.html
 
 # Start development environment
 make dev-up
@@ -489,9 +498,16 @@ docker compose logs ssh-tunnel
 ```
 ├── cmd/server/          # Main application
 ├── internal/
+│   ├── acme/           # ACME/Let's Encrypt integration
+│   ├── certs/          # Certificate generation utilities
+│   ├── common/         # Shared utilities (mutex, URL builder, cert validator)
 │   ├── config/         # Configuration management
-│   ├── ssh/            # SSH server implementation  
-│   └── proxy/          # HTTP/HTTPS reverse proxy
+│   ├── fileutil/       # File operations with atomic writes
+│   ├── logger/         # Structured logging
+│   ├── proxy/          # HTTP/HTTPS reverse proxy
+│   ├── ssh/            # SSH server implementation
+│   ├── testutil/       # Test utilities and shared mocks
+│   └── webui/          # Web UI and user management
 ├── test/               # Test utilities and scripts
 ├── docker-compose.yml  # Development environment
 └── Makefile           # Build and test automation
@@ -596,23 +612,13 @@ docker compose logs ssh-tunnel
 - No connection rate limiting  
 - Basic monitoring only
 
-### Completed Features
-- ✅ SSH tunnel creation and HTTP proxy routing
-- ✅ HTTPS with automatic Let's Encrypt certificates
-- ✅ Self-signed certificate generation for development
-- ✅ SSH key authentication
-- ✅ Custom ACME server support (for internal PKI)
-- ✅ **Built-in ACME rate limiting** (protects against Let's Encrypt limits)
-- ✅ **WebUI management interface** (tunnel dashboard and user management)
-- ✅ **Password-based SSH authentication** (via WebUI user management)
-- ✅ Comprehensive configuration options
-
 ### Planned Features
 - 📋 Web-based tunnel management interface
 - 📋 Rate limiting and security hardening
 - 📋 Monitoring and usage analytics
 - 📋 Multiple authentication backends
 - 📋 Tunnel persistence and reconnection
+- 📋 HTTP Debug output (Between TLS Termination and proxying to your application)
 
 ## Contributing
 
