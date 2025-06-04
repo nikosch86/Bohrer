@@ -17,6 +17,9 @@ func TestMainComponents(t *testing.T) {
 		t.Fatal("Expected config to be loaded")
 	}
 
+	// Use ephemeral SSH host key for tests
+	cfg.SSHHostKeyPath = ""
+
 	// Test proxy creation
 	proxyServer := proxy.NewProxy(cfg)
 	if proxyServer == nil {
@@ -42,10 +45,11 @@ func TestMainComponents(t *testing.T) {
 func TestServerIntegration(t *testing.T) {
 	// Test basic integration between SSH server and proxy
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2223, // Use different port to avoid conflicts
-		HTTPPort:  8081,
-		HTTPSPort: 8444,
+		Domain:         "test.local",
+		SSHPort:        2223, // Use different port to avoid conflicts
+		HTTPPort:       8081,
+		HTTPSPort:      8444,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 
 	proxyServer := proxy.NewProxy(cfg)
@@ -90,10 +94,11 @@ func TestConfigDefaults(t *testing.T) {
 func TestStartupSequence(t *testing.T) {
 	// Test the startup sequence without actually starting servers
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   0, // Use port 0 to get a dynamic port
-		HTTPPort:  0,
-		HTTPSPort: 0,
+		Domain:         "test.local",
+		SSHPort:        0, // Use port 0 to get a dynamic port
+		HTTPPort:       0,
+		HTTPSPort:      0,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 
 	// Create components in the same order as main()
@@ -129,23 +134,26 @@ func TestServerConfiguration(t *testing.T) {
 	// Test various server configurations
 	configs := []*config.Config{
 		{
-			Domain:    "localhost",
-			SSHPort:   2222,
-			HTTPPort:  8080,
-			HTTPSPort: 8443,
+			Domain:         "localhost",
+			SSHPort:        2222,
+			HTTPPort:       8080,
+			HTTPSPort:      8443,
+			SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 		},
 		{
-			Domain:    "example.com",
-			SSHPort:   22,
-			HTTPPort:  80,
-			HTTPSPort: 443,
+			Domain:         "example.com",
+			SSHPort:        22,
+			HTTPPort:       80,
+			HTTPSPort:      443,
+			SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 		},
 		{
-			Domain:      "test.dev",
-			SSHPort:     2224,
-			HTTPPort:    8082,
-			HTTPSPort:   8445,
-			ACMEStaging: true,
+			Domain:         "test.dev",
+			SSHPort:        2224,
+			HTTPPort:       8082,
+			HTTPSPort:      8445,
+			ACMEStaging:    true,
+			SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 		},
 	}
 

@@ -17,13 +17,19 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func TestNewServer(t *testing.T) {
-	cfg := &config.Config{
-		Domain:    "test.com",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+// Helper function to create test config with ephemeral SSH key
+func createTestConfig() *config.Config {
+	return &config.Config{
+		Domain:         "test.com",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral key for tests
 	}
+}
+
+func TestNewServer(t *testing.T) {
+	cfg := createTestConfig()
 
 	server := NewServer(cfg)
 
@@ -51,6 +57,147 @@ func TestNewServer(t *testing.T) {
 	// Test that mutex is initialized
 	server.mutex.Lock()
 	server.mutex.Unlock()
+}
+
+func TestSSHServerHostKeyPersistenceIntegration(t *testing.T) {
+	// Create a temporary directory for test
+	tmpDir, err := os.MkdirTemp("", "ssh-integration-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hostKeyPath := tmpDir + "/ssh_host_rsa_key"
+
+	// Create config with persistent host key
+	cfg := &config.Config{
+		Domain:         "test.com",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: hostKeyPath,
+	}
+
+	// Create first server instance
+	server1 := NewServer(cfg)
+	if server1 == nil {
+		t.Fatal("Failed to create first server instance")
+	}
+
+	// Get host key fingerprint from first server
+	hostKey1 := server1.hostKey.PublicKey()
+	fingerprint1 := ssh.FingerprintSHA256(hostKey1)
+
+	// Verify key file was created
+	if _, err := os.Stat(hostKeyPath); os.IsNotExist(err) {
+		t.Fatal("Host key file was not created")
+	}
+
+	// Create second server instance with same config
+	server2 := NewServer(cfg)
+	if server2 == nil {
+		t.Fatal("Failed to create second server instance")
+	}
+
+	// Get host key fingerprint from second server
+	hostKey2 := server2.hostKey.PublicKey()
+	fingerprint2 := ssh.FingerprintSHA256(hostKey2)
+
+	// Verify both servers use the same host key
+	if fingerprint1 != fingerprint2 {
+		t.Errorf("Host key fingerprints don't match\nFirst: %s\nSecond: %s", 
+			fingerprint1, fingerprint2)
+	}
+}
+
+func TestHostKeyPersistence(t *testing.T) {
+	t.Run("should generate and save host key if none exists", func(t *testing.T) {
+		// Create a temporary directory for test
+		tmpDir, err := os.MkdirTemp("", "ssh-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		keyPath := tmpDir + "/ssh_host_rsa_key"
+
+		// Generate host key with persistence
+		signer, err := loadOrGenerateHostKey(keyPath)
+		if err != nil {
+			t.Fatalf("Failed to generate host key: %v", err)
+		}
+
+		if signer == nil {
+			t.Fatal("Expected host key to be generated")
+		}
+
+		// Check that key file was created
+		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+			t.Error("Expected host key file to be created")
+		}
+	})
+
+	t.Run("should load existing host key from disk", func(t *testing.T) {
+		// Create a temporary directory for test
+		tmpDir, err := os.MkdirTemp("", "ssh-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		keyPath := tmpDir + "/ssh_host_rsa_key"
+
+		// Generate first key
+		signer1, err := loadOrGenerateHostKey(keyPath)
+		if err != nil {
+			t.Fatalf("Failed to generate host key: %v", err)
+		}
+
+		// Load the same key again
+		signer2, err := loadOrGenerateHostKey(keyPath)
+		if err != nil {
+			t.Fatalf("Failed to load host key: %v", err)
+		}
+
+		// Compare public keys to ensure they're the same
+		pub1 := signer1.PublicKey()
+		pub2 := signer2.PublicKey()
+
+		// Compare fingerprints since ssh.PublicKey doesn't have Equal method
+		fp1 := ssh.FingerprintSHA256(pub1)
+		fp2 := ssh.FingerprintSHA256(pub2)
+
+		if fp1 != fp2 {
+			t.Errorf("Expected loaded key to match previously generated key\nGot: %s\nWant: %s", fp2, fp1)
+		}
+	})
+
+	t.Run("should handle invalid key file gracefully", func(t *testing.T) {
+		// Create a temporary directory for test
+		tmpDir, err := os.MkdirTemp("", "ssh-test-*")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		keyPath := tmpDir + "/ssh_host_rsa_key"
+
+		// Write invalid data to key file
+		err = os.WriteFile(keyPath, []byte("invalid key data"), 0600)
+		if err != nil {
+			t.Fatalf("Failed to write invalid key file: %v", err)
+		}
+
+		// Should generate new key when existing file is invalid
+		signer, err := loadOrGenerateHostKey(keyPath)
+		if err != nil {
+			t.Fatalf("Failed to handle invalid key file: %v", err)
+		}
+
+		if signer == nil {
+			t.Fatal("Expected new host key to be generated")
+		}
+	})
 }
 
 func TestGenerateSubdomain(t *testing.T) {

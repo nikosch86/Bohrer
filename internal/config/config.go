@@ -28,6 +28,7 @@ type Config struct {
 	UserStoragePath   string // Path to user storage file (used when UserStorageType is "file")
 	WebUIUsername     string // WebUI admin username (if empty, will be generated)
 	WebUIPassword     string // WebUI admin password (if empty, will be generated)
+	SSHHostKeyPath    string // Path to SSH host key file
 }
 
 func Load() *Config {
@@ -54,6 +55,7 @@ func Load() *Config {
 		UserStoragePath:   getEnv("USER_STORAGE_PATH", "/data/users.json"),
 		WebUIUsername:     getEnv("WEBUI_USERNAME", ""),
 		WebUIPassword:     getEnv("WEBUI_PASSWORD", ""),
+		SSHHostKeyPath:    getEnv("SSH_HOST_KEY_PATH", "/data/ssh_host_rsa_key"),
 	}
 
 	// If external ports are not set, use internal ports

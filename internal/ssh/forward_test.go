@@ -79,10 +79,11 @@ func (m *mockChannel) Stderr() io.ReadWriter { return nil }
 func TestForwardConnectionThroughSSHAdvanced(t *testing.T) {
 	// Create a test SSH server
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+		Domain:         "test.local",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 	server := NewServer(cfg)
 
@@ -205,10 +206,11 @@ func TestForwardConnectionThroughSSHAdvanced(t *testing.T) {
 // TestHandleDirectTcpipImproved tests additional scenarios for handleDirectTcpip
 func TestHandleDirectTcpipImproved(t *testing.T) {
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+		Domain:         "test.local",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 	server := NewServer(cfg)
 

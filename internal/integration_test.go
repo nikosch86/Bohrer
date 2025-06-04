@@ -20,10 +20,11 @@ import (
 // SSH tunnel creation → HTTP proxy can route to tunnel → HTTP requests work
 func TestSSHTunnelToHTTPProxyIntegration(t *testing.T) {
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+		Domain:         "test.local",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 
 	// Create SSH server and HTTP proxy
@@ -102,10 +103,11 @@ func TestSSHTunnelToHTTPProxyIntegration(t *testing.T) {
 // TestMultipleConcurrentTunnels tests that multiple SSH tunnels work independently
 func TestMultipleConcurrentTunnels(t *testing.T) {
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+		Domain:         "test.local",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 
 	sshServer := ssh.NewServer(cfg)
@@ -185,10 +187,11 @@ func TestMultipleConcurrentTunnels(t *testing.T) {
 // TestTunnelLifecycleWithRealConnections tests tunnel creation and cleanup with more realistic scenarios
 func TestTunnelLifecycleWithRealConnections(t *testing.T) {
 	cfg := &config.Config{
-		Domain:    "test.local",
-		SSHPort:   2222,
-		HTTPPort:  8080,
-		HTTPSPort: 8443,
+		Domain:         "test.local",
+		SSHPort:        2222,
+		HTTPPort:       8080,
+		HTTPSPort:      8443,
+		SSHHostKeyPath: "", // Use ephemeral SSH host key for tests
 	}
 
 	sshServer := ssh.NewServer(cfg)

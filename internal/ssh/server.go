@@ -19,6 +19,7 @@ import (
 
 	"bohrer-go/internal/common"
 	"bohrer-go/internal/config"
+	"bohrer-go/internal/fileutil"
 	"bohrer-go/internal/logger"
 	"golang.org/x/crypto/ssh"
 )
@@ -71,9 +72,21 @@ type Tunnel struct {
 }
 
 func NewServer(cfg *config.Config) *Server {
-	hostKey, err := generateHostKey()
+	// Use persistent host key path from config
+	hostKeyPath := cfg.SSHHostKeyPath
+	// For testing, use in-memory key if path is empty
+	var hostKey ssh.Signer
+	var err error
+	
+	if hostKeyPath == "" {
+		logger.Info("No SSH host key path configured, generating ephemeral key")
+		hostKey, err = generateHostKey()
+	} else {
+		hostKey, err = loadOrGenerateHostKey(hostKeyPath)
+	}
+	
 	if err != nil {
-		logger.Fatalf("Failed to generate host key: %v", err)
+		logger.Fatalf("Failed to load or generate host key: %v", err)
 	}
 
 	return &Server{
@@ -403,6 +416,44 @@ func generateHostKey() (ssh.Signer, error) {
 		Bytes: keyBytes,
 	})
 
+	return ssh.ParsePrivateKey(keyPEM)
+}
+
+// loadOrGenerateHostKey loads an existing host key from disk or generates a new one
+func loadOrGenerateHostKey(keyPath string) (ssh.Signer, error) {
+	// Try to load existing key
+	if keyData, err := os.ReadFile(keyPath); err == nil {
+		// Try to parse the key
+		if signer, err := ssh.ParsePrivateKey(keyData); err == nil {
+			logger.Infof("Loaded existing SSH host key from %s", keyPath)
+			return signer, nil
+		}
+		// If parsing fails, log warning and generate new key
+		logger.Warnf("Failed to parse existing host key, generating new one: %v", err)
+	}
+
+	// Generate new key
+	logger.Info("Generating new SSH host key")
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
+	}
+
+	// Convert to PEM format
+	keyBytes := x509.MarshalPKCS1PrivateKey(key)
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+
+	// Save key to disk
+	if err := fileutil.WriteFileWithDir(keyPath, keyPEM, 0600); err != nil {
+		return nil, fmt.Errorf("failed to save host key: %w", err)
+	}
+
+	logger.Infof("Saved new SSH host key to %s", keyPath)
+
+	// Parse and return the key
 	return ssh.ParsePrivateKey(keyPEM)
 }
 

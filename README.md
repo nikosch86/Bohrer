@@ -4,73 +4,58 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 
 ## Quick Start
 
-### For Users (Connecting to an Existing Server)
+### For Users
 
-1. **Connect and create a tunnel:**
-   ```bash
-   ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222
-   ```
+```bash
+# Connect with SSH key (username must be "tunnel")
+ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222 -i ~/.ssh/id_rsa
 
-2. **Access your service:**
-   ```
-   Tunnel created: http://happy-cloud-42.your-server.com:8080
-   ```
-   Your local service running on port 3000 is now accessible at the provided URL.
+# OR connect with username/password (created via WebUI)
+ssh -R 0:localhost:3000 username@your-server.com -p 2222
 
-### For Server Administrators (Running Your Own Server)
+# Your service is now accessible at the provided URL:
+# Tunnel created: http://happy-cloud-42.your-server.com
+```
+
+**Note**: Server must be publicly accessible to share tunnels. Authentication requires either SSH keys or WebUI-created credentials.
+
+### For Server Administrators
 
 #### Prerequisites
 - Docker and Docker Compose
-- Domain name pointing to your server (for production HTTPS)
+- For production: Public server, domain with wildcard DNS (*.domain.com), open ports 2222/80/443
 
-#### Installation
+#### Quick Setup
 
-1. **Configure:**
-   ```bash
-   # Configure your domain
-   export DOMAIN=your-domain.com
-   export ACME_EMAIL=your-email@domain.com
-   ```
+```bash
+# 1. Setup
+git clone https://github.com/your-repo/bohrer-go.git && cd bohrer-go
+cp .env.example .env
+# Edit .env: Set DOMAIN, ACME_EMAIL, etc.
 
-2. **Configure environment (recommended):**
-   ```bash
-   # Copy example configuration
-   cp .env.example .env
-   
-   # Edit .env with your settings
-   vi .env
-   ```
+# 2. Start server
+docker compose up -d
 
-3. **Set up SSH key authentication (recommended for production):**
-   ```bash
-   # Option 1: Add your existing public key to the container
-   docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ~/.ssh/id_rsa.pub)' > /data/authorized_keys"
-   
-   # Option 2: Create a new key specifically for the tunnel
-   ssh-keygen -t rsa -b 4096 -f ./tunnel_key
-   docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ./tunnel_key.pub)' > /data/authorized_keys"
-   ```
-   
-   **Note**: The server uses Docker named volumes for data persistence. SSH keys and certificates are stored in the `ssh_tunnel_data` volume.
+# 3. Get admin credentials and access WebUI
+docker compose logs ssh-tunnel
+# Access: https://localhost or https://your-domain.com
 
-4. **Start the server:**
-   ```bash
-   docker compose up -d
-   ```
+# 4. Create authentication (in WebUI)
+# - Users: "Manage Users" → Create username/password
+# - SSH Keys: "SSH Keys" → Add public keys
 
-5. **Verify it's running:**
-   ```bash
-   docker compose ps
-   docker compose logs ssh-tunnel
-   ```
+# 5. Test tunnel
+ssh -R 0:localhost:3000 user@your-domain.com -p 2222
+```
+
 
 ## How It Works
 
 ```
 ┌─────────────────┐    SSH Tunnel    ┌──────────────────┐    HTTP Proxy    ┌─────────────────┐
-│   Your Local   │ ────────────────▶ │  Bohrer Server   │ ────────────────▶ │   Internet      │
-│   Service       │         :2222    │  + WebUI         │        :8080     │   Users         │
-│   localhost:3000│ ◀──────────────── │  your-server.com │ ◀──────────────── │                 │
+│   Your Local    │ ───────────────▶ │  Bohrer Server   │ ───────────────▶ │   Internet      │
+│   Service       │         :2222    │  + WebUI         │       :80        │   Users         │
+│   localhost:3000│ ◀─────────────── │  your-server.com │ ◀──────────────  │                 │
 └─────────────────┘                  └──────────────────┘                  └─────────────────┘
                                             │
                                             ▼
@@ -84,151 +69,49 @@ A secure SSH tunneling server that provides instant HTTPS URLs for your local se
 4. **Secure Access**: Your local service becomes accessible via the public subdomain
 5. **WebUI Management**: Visit the root domain to manage tunnels and users
 
-## WebUI Management Interface
+## Network Requirements
 
-The server includes a built-in web interface for managing tunnels and SSH users:
+| Environment | Requirements | Access |
+|------------|--------------|---------|
+| **Local Development** | `localhost` domain, Docker | Same machine only |
+| **Production** | Public IP, Domain with wildcard DNS (*.domain.com), Ports 2222/80/443 open | Internet accessible |
 
-### 🌐 Access the WebUI
-Visit your server's root domain in a browser:
-- **Development**: `https://localhost:8443` (uses self-signed certificate)
-- **Production**: `https://your-domain.com`
+## WebUI Management
 
-**Note**: WebUI is only available via HTTPS on the root domain. HTTP requests to the root domain will return 404.
+Access at `https://your-domain.com` (or `https://localhost` for development)
 
-### 📊 Dashboard Features
-- **Active Tunnels**: View all currently established SSH tunnels
-- **Tunnel Details**: See subdomain, target, status, and direct links
-- **Real-time Updates**: Dashboard shows live tunnel information
+**Features:**
+- 📊 **Dashboard**: View active tunnels with real-time updates
+- 👥 **User Management**: Create/delete SSH users with passwords
+- 🔑 **SSH Key Management**: Add/remove SSH public keys
+- 🔒 **Authentication**: Basic auth with auto-generated or configured admin credentials
 
-### 👥 User Management
-- **Create SSH Users**: Add new username/password pairs for SSH authentication
-- **Delete Users**: Remove SSH users that are no longer needed
-- **View User List**: See all configured SSH users
+## Authentication
 
-### 🔧 Usage Example
+### Password Authentication
+Create users via WebUI (`https://your-domain.com`) → "Manage Users"
+
+### SSH Key Authentication
+
+**Via WebUI (Recommended):**
+1. Go to "SSH Keys" in WebUI
+2. Add your public key with a name
+3. Connect using username "tunnel": `ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222`
+
+**Via Command Line:**
 ```bash
-# 1. Visit WebUI at https://your-domain.com (login with generated credentials from logs)
-# 2. Go to "Manage Users" and create user "alice" with password "secret123"
-# 3. Connect via SSH with the new credentials:
-ssh -R 0:localhost:3000 alice@your-domain.com -p 2222
-# 4. View the new tunnel on the dashboard
-```
-
-The WebUI replaces the need for hardcoded SSH credentials and provides visual tunnel management.
-
-## User Guide
-
-### Basic Usage
-
-**Create a tunnel for a web server:**
-```bash
-# Your local server is running on port 3000
-ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222
-```
-
-**Create a tunnel for a specific port:**
-```bash
-# Forward specific port 8080 to your local port 3000
-ssh -R 8080:localhost:3000 tunnel@your-server.com -p 2222
-```
-
-**Keep tunnel alive in background:**
-```bash
-# Use -f to run in background, -N to not execute commands
-ssh -f -N -R 0:localhost:3000 tunnel@your-server.com -p 2222
-```
-
-### Authentication
-
-The server supports both password and SSH key authentication:
-
-#### Password Authentication
-- **WebUI Management**: Create users via the web interface at your root domain
-- **Initial Access**: Use the auto-generated admin credentials shown in server logs, or set `WEBUI_USERNAME` and `WEBUI_PASSWORD` environment variables
-- **No Default Users**: There are no hardcoded SSH users - you must create them via WebUI or use SSH keys
-
-#### SSH Key Authentication (Production)
-For production deployments, use SSH key authentication:
-
-**1. Generate SSH Key Pair (if you don't have one):**
-```bash
-ssh-keygen -t rsa -b 4096 -C "your-email@example.com"
-# This creates ~/.ssh/id_rsa (private) and ~/.ssh/id_rsa.pub (public)
-```
-
-**2. Create Authorized Keys File:**
-```bash
-# Add your public key to the container volume
+# Add key to authorized_keys
 docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && echo '$(cat ~/.ssh/id_rsa.pub)' > /data/authorized_keys"
-
-# Or add multiple keys:
-docker compose run --rm ssh-tunnel sh -c "mkdir -p /data && cat > /data/authorized_keys" << EOF
-$(cat user1_key.pub)
-$(cat user2_key.pub)
-EOF
 ```
 
-**3. Configure Server Environment:**
-The server automatically uses `/data/authorized_keys` inside the container. No additional configuration needed when using the default Docker Compose setup.
+## Common Usage Examples
 
-**4. Connect with SSH Key:**
 ```bash
-# Use your private key to connect
-ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222 -i ~/.ssh/id_rsa
-
-# Or if using ssh-agent:
-ssh-add ~/.ssh/id_rsa
-ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222
+# Basic tunnel
+ssh -R 0:localhost:3000 user@your-server.com -p 2222
 ```
 
-**Authorized Keys Format:**
-The authorized_keys file follows standard SSH format:
-```
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC... user1@example.com
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user2@example.com
-# Comments start with #
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ... user3@example.com
-```
-
-> **Security Note**: In production, consider disabling password authentication entirely by removing the PasswordCallback in your deployment configuration.
-
-### Supported Services
-
-Works with any HTTP service:
-- **Web applications** (React, Vue, Angular dev servers)
-- **API servers** (Node.js, Python Flask/Django, Go servers)
-- **Static file servers** (nginx, Apache, Python SimpleHTTPServer)
-- **Development tools** (Webpack dev server, Vite, etc.)
-
-### Examples
-
-**React Development Server:**
-```bash
-# Start your React app
-npm start  # Usually runs on localhost:3000
-
-# In another terminal, create tunnel
-ssh -R 0:localhost:3000 tunnel@your-server.com -p 2222
-# Share the provided URL with team members or clients
-```
-
-**Python Flask API:**
-```bash
-# Start your Flask app
-flask run --port 5000
-
-# Create tunnel for Flask
-ssh -R 0:localhost:5000 tunnel@your-server.com -p 2222
-```
-
-**Static Website:**
-```bash
-# Serve static files
-python -m http.server 8000
-
-# Create tunnel
-ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
-```
+Works with any HTTP service: React, Flask, Django, static files, etc.
 
 ## Server Configuration
 
@@ -280,69 +163,16 @@ ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
 | `WEBUI_USERNAME` | _(empty)_ | WebUI admin username (empty = auto-generate) |
 | `WEBUI_PASSWORD` | _(empty)_ | WebUI admin password (empty = auto-generate) |
 
-### Certificate Configuration Scenarios
+### Certificate Options
 
-#### Development (Self-Signed Certificates)
-```bash
-# .env
-DOMAIN=localhost
-ACME_EMAIL=                    # Empty = disable ACME
-ACME_STAGING=true
-HTTP_EXTERNAL_PORT=8080
-HTTPS_EXTERNAL_PORT=8443
-```
-**Result**: Generates wildcard self-signed certificate for `*.localhost`
+| Environment | Configuration | Result |
+|------------|--------------|---------|
+| **Development** | `DOMAIN=localhost`, no `ACME_EMAIL` | Self-signed certificate |
+| **Production** | Valid domain, `ACME_EMAIL`, `ACME_STAGING=false` | Let's Encrypt certificate |
+| **Testing** | Valid domain, `ACME_EMAIL`, `ACME_STAGING=true` | Let's Encrypt staging |
+| **Internal CA** | `ACME_DIRECTORY_URL`, `ACME_FORCE_LOCAL=true` | Custom ACME server |
 
-#### Production (Let's Encrypt)
-```bash
-# .env  
-DOMAIN=tunnel.yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-ACME_STAGING=false            # EXPLICIT production setting required
-HTTP_EXTERNAL_PORT=80
-HTTPS_EXTERNAL_PORT=443
-```
-**Result**: Uses Let's Encrypt production server for real certificates
-
-**⚠️ PRODUCTION SAFETY & RATE LIMITING**: 
-- **Always test with staging first** (`ACME_STAGING=true`)
-- **Built-in rate limiting** protects against Let's Encrypt production limits:
-  - 5 authorization failures per hostname per hour
-  - 300 new orders per account every 3 hours  
-  - 50 certificates per domain every 7 days
-- **Automatic enforcement**: Rate limits are checked before ACME requests
-- Only set `ACME_STAGING=false` for real production deployments
-- Requires valid public domain with proper DNS setup
-
-#### Staging/Testing (Let's Encrypt Staging)
-```bash
-# .env
-DOMAIN=tunnel-test.yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-ACME_STAGING=true             # Use staging Let's Encrypt
-```
-**Result**: Uses Let's Encrypt staging server (higher rate limits, fake certificates)
-
-#### Custom PKI/Internal CA
-```bash
-# .env
-DOMAIN=tunnel.company.local
-ACME_EMAIL=admin@company.local
-ACME_DIRECTORY_URL=https://ca.company.local/acme/acme/directory
-ACME_FORCE_LOCAL=true         # Force ACME for local domains
-ACME_STAGING=false
-```
-**Result**: Uses your internal ACME server (e.g., Step CA, Smallstep) even for local domains
-
-#### Mixed Environment (Custom ACME + Local Fallback)
-```bash
-# .env
-DOMAIN=dev.company.local
-ACME_EMAIL=admin@company.local
-ACME_DIRECTORY_URL=https://ca.company.local/acme/acme/directory
-ACME_FORCE_LOCAL=false        # Don't force - fallback to self-signed if ACME fails
-```
-**Result**: Tries custom ACME server first, falls back to self-signed if it fails
+**⚠️ Production Rate Limits**: Let's Encrypt enforces strict limits (5 auth failures/hour, 50 certs/week per domain). Always test with staging first!
 
 ### Certificate Decision Logic
 
@@ -375,81 +205,6 @@ The server includes **built-in rate limiting** to protect against Let's Encrypt 
 #### Rate Limit Status
 The rate limiting status can be monitored programmatically through the ACME client's `GetRateLimitStatus()` method, which returns current usage for all tracked limits.
 
-### Docker Compose Configuration
-
-The server uses environment variables for flexible port configuration:
-
-```yaml
-# docker-compose.yml
-services:
-  ssh-tunnel:
-    build: .
-    ports:
-      - "${SSH_EXTERNAL_PORT:-2222}:22"          # SSH port (external:internal)
-      - "${HTTP_EXTERNAL_PORT:-8080}:80"         # HTTP port (external:internal)
-      - "${HTTPS_EXTERNAL_PORT:-8443}:443"       # HTTPS port (external:internal)
-    environment:
-      - DOMAIN=your-domain.com
-      - ACME_EMAIL=admin@your-domain.com
-      - ACME_STAGING=false
-      - SSH_PORT=22                               # Standard SSH port inside container
-      - HTTP_PORT=80                              # Standard HTTP port inside container
-      - HTTPS_PORT=443                            # Standard HTTPS port inside container
-      - HTTP_EXTERNAL_PORT=${HTTP_EXTERNAL_PORT:-8080}
-      - HTTPS_EXTERNAL_PORT=${HTTPS_EXTERNAL_PORT:-8443}
-      - SSH_AUTHORIZED_KEYS=/data/authorized_keys
-    volumes:
-      - ssh_tunnel_data:/data   # Named volume for certificate and SSH keys storage
-    restart: unless-stopped
-
-volumes:
-  ssh_tunnel_data:
-```
-
-### Environment Configuration
-
-Create a `.env` file to customize ports and settings:
-
-```bash
-# .env file
-DOMAIN=yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-ACME_STAGING=false
-
-# External ports (what users access)
-SSH_EXTERNAL_PORT=2222
-HTTP_EXTERNAL_PORT=80     # Standard HTTP port
-HTTPS_EXTERNAL_PORT=443   # Standard HTTPS port
-
-# Internal ports (inside container) - standard ports, usually don't change these
-HTTP_PORT=80
-HTTPS_PORT=443
-SSH_PORT=22
-```
-
-### Port Configuration Examples
-
-**Development (avoiding conflicts):**
-```bash
-# .env
-HTTP_EXTERNAL_PORT=8081
-HTTPS_EXTERNAL_PORT=8444
-```
-
-**Production (standard ports):**
-```bash
-# .env  
-HTTP_EXTERNAL_PORT=80
-HTTPS_EXTERNAL_PORT=443
-```
-
-**Custom deployment:**
-```bash
-# .env
-HTTP_EXTERNAL_PORT=3000
-HTTPS_EXTERNAL_PORT=3443
-SSH_EXTERNAL_PORT=2223
-```
 
 ### DNS Configuration
 
@@ -527,7 +282,10 @@ docker compose logs ssh-tunnel
 ```
 
 **"Permission denied" on SSH:**
-- **For password auth**: Verify username is `tunnel` and password is `test123`
+- **For password auth**: Ensure the username exists in WebUI and password is correct
+  - Check WebUI at `https://your-server.com` → "Manage Users"
+  - Verify the username was created successfully
+  - Try creating a new user if needed
 - **For key auth**: Check these common issues:
   ```bash
   # Verify your public key is in authorized_keys inside the container
@@ -558,10 +316,10 @@ docker compose logs ssh-tunnel
 **Tunnel created but URL not accessible:**
 ```bash
 # Check if HTTP proxy is running
-curl -I http://your-server.com:8080
+curl -I http://your-server.com
 
 # Test with subdomain
-curl -H "Host: happy-cloud-42.your-server.com" http://your-server.com:8080
+curl -H "Host: happy-cloud-42.your-server.com" http://your-server.com
 ```
 
 **Local service not responding:**
@@ -575,50 +333,11 @@ curl -H "Host: happy-cloud-42.your-server.com" http://your-server.com:8080
 ```bash
 # Check port conflicts
 netstat -tlnp | grep :2222
-netstat -tlnp | grep :8080
+netstat -tlnp | grep :80
 
 # Check logs for specific errors
 docker compose logs ssh-tunnel
 ```
-
-## Security Considerations
-
-### Development vs Production
-
-**Development (current):**
-- Password authentication (`tunnel`/`test123`)
-- HTTP only (no HTTPS)
-- Self-signed certificates
-- Localhost domain
-
-**Production (recommended):**
-- SSH key authentication only
-- HTTPS with Let's Encrypt certificates
-- Real domain names
-- Rate limiting and monitoring
-
-### Best Practices
-
-1. **Use SSH keys** instead of passwords in production
-2. **Configure firewall** to limit SSH access
-3. **Monitor tunnel usage** and implement rate limiting
-4. **Regular updates** and security patches
-5. **Backup certificate data** for HTTPS
-
-## Limitations
-
-### Current Limitations
-- No tunnel management interface
-- No connection rate limiting  
-- Basic monitoring only
-
-### Planned Features
-- 📋 Web-based tunnel management interface
-- 📋 Rate limiting and security hardening
-- 📋 Monitoring and usage analytics
-- 📋 Multiple authentication backends
-- 📋 Tunnel persistence and reconnection
-- 📋 HTTP Debug output (Between TLS Termination and proxying to your application)
 
 ## Contributing
 
@@ -643,17 +362,3 @@ open coverage.html
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-**Quick Test**: Try the tunnel server with a simple Python HTTP server:
-```bash
-# Terminal 1: Start a simple web server
-echo "Hello from my local server!" > index.html
-python -m http.server 8000
-
-# Terminal 2: Create tunnel  
-ssh -R 0:localhost:8000 tunnel@your-server.com -p 2222
-
-# Access via provided URL to see your local file served publicly
-```
