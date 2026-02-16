@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/go-acme/lego/v4 v4.28.1
-	github.com/letsencrypt/challtestsrv v1.3.3
+	github.com/letsencrypt/challtestsrv v1.4.2
 	golang.org/x/crypto v0.48.0
 )
 
