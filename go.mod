@@ -3,7 +3,7 @@ module bohrer-go
 go 1.26.0
 
 require (
-	github.com/go-acme/lego/v4 v4.34.0
+	github.com/go-acme/lego/v4 v4.35.2
 	github.com/letsencrypt/challtestsrv v1.4.2
 	golang.org/x/crypto v0.50.0
 )
