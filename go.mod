@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
